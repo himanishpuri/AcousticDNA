@@ -1,0 +1,15 @@
+cmd/
+docs/
+scripts/
+wasm/
+web/
+.env
+.env.example
+Makefile
+README.md
+
+
+storage
+matching
+fingerprint
+api
