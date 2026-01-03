@@ -35,7 +35,7 @@ func ConvertToMonoWAV(
 		defer cancel()
 	}
 
-	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+	if err := utils.MakeDir(outputDir); err != nil {
 		return "", err
 	}
 
