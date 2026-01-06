@@ -7,9 +7,3 @@ web/
 .env.example
 Makefile
 README.md
-
-
-storage
-matching
-fingerprint
-api
