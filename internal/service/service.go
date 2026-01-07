@@ -131,7 +131,7 @@ func (s *AcousticService) MatchSong(ctx context.Context, audioPath string) ([]Ma
 	// 8. Convert to results with song info
 	results := make([]MatchResult, 0, len(matches))
 	for _, match := range matches {
-		song, err := s.getSongByID(match.SongID)
+		song, err := s.GetSongByID(match.SongID)
 		if err != nil {
 			s.log.Warnf("Failed to get song %d: %v", match.SongID, err)
 			continue
@@ -162,12 +162,27 @@ type MatchResult struct {
 	Confidence float64
 }
 
-func (s *AcousticService) getSongByID(songID uint32) (*storage.Song, error) {
+// GetSongByID retrieves a song by its ID
+func (s *AcousticService) GetSongByID(songID uint32) (*storage.Song, error) {
 	var song storage.Song
 	if err := s.db.DB.First(&song, songID).Error; err != nil {
 		return nil, err
 	}
 	return &song, nil
+}
+
+// ListSongs returns all songs in the database
+func (s *AcousticService) ListSongs() ([]storage.Song, error) {
+	var songs []storage.Song
+	if err := s.db.DB.Find(&songs).Error; err != nil {
+		return nil, err
+	}
+	return songs, nil
+}
+
+// DeleteSong deletes a song and its fingerprints by ID
+func (s *AcousticService) DeleteSong(songID uint32) error {
+	return s.db.DeleteSongByID(songID)
 }
 
 func (s *AcousticService) Close() error {

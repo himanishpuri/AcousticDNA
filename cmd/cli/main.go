@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -197,13 +198,87 @@ func handleMatch() {
 }
 
 func handleList() {
-	// TODO: Implement listing all songs
-	fmt.Println("List command not yet implemented")
+	log := logger.GetLogger()
+
+	svc, err := service.NewAcousticService()
+	if err != nil {
+		fmt.Printf("❌ Failed to create service: %v\n", err)
+		log.Errorf("Service initialization failed: %v", err)
+		os.Exit(1)
+	}
+	defer svc.Close()
+
+	songs, err := svc.ListSongs()
+	if err != nil {
+		fmt.Printf("❌ Failed to list songs: %v\n", err)
+		log.Errorf("ListSongs failed: %v", err)
+		os.Exit(1)
+	}
+
+	if len(songs) == 0 {
+		fmt.Println("\n📭 No songs in database")
+		log.Info("No songs in database")
+		return
+	}
+
+	fmt.Printf("\n📚 Found %d song(s):\n\n", len(songs))
+	for i, song := range songs {
+		fmt.Printf("%d. \"%s\" by %s (ID: %d)\n", i+1, song.Title, song.Artist, song.ID)
+		if song.YouTubeID != "" {
+			fmt.Printf("   YouTube: https://youtube.com/watch?v=%s\n", song.YouTubeID)
+		}
+		if song.DurationMs > 0 {
+			duration := song.DurationMs / 1000
+			fmt.Printf("   Duration: %d:%02d\n", duration/60, duration%60)
+		}
+		fmt.Println()
+	}
+	log.Infof("Listed %d songs", len(songs))
 }
 
 func handleDelete() {
-	// TODO: Implement deleting a song
-	fmt.Println("Delete command not yet implemented")
+	log := logger.GetLogger()
+
+	if len(os.Args) < 3 {
+		fmt.Println("Usage: acousticDNA delete <song_id>")
+		os.Exit(1)
+	}
+
+	songID, err := strconv.ParseUint(os.Args[2], 10, 32)
+	if err != nil {
+		fmt.Printf("❌ Invalid song ID: %v\n", err)
+		log.Errorf("Invalid song ID: %v", err)
+		os.Exit(1)
+	}
+
+	svc, err := service.NewAcousticService()
+	if err != nil {
+		fmt.Printf("❌ Failed to create service: %v\n", err)
+		log.Errorf("Service initialization failed: %v", err)
+		os.Exit(1)
+	}
+	defer svc.Close()
+
+	// Get song info before deletion
+	song, err := svc.GetSongByID(uint32(songID))
+	if err != nil {
+		fmt.Printf("❌ Song not found (ID: %d)\n", songID)
+		log.Warnf("Song %d not found: %v", songID, err)
+		os.Exit(1)
+	}
+
+	// Delete
+	if err := svc.DeleteSong(uint32(songID)); err != nil {
+		fmt.Printf("❌ Failed to delete song: %v\n", err)
+		log.Errorf("DeleteSong failed: %v", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("\n✅ Successfully deleted song:\n")
+	fmt.Printf("   ID:     %d\n", song.ID)
+	fmt.Printf("   Title:  %s\n", song.Title)
+	fmt.Printf("   Artist: %s\n", song.Artist)
+	log.Infof("Deleted song ID=%d ('%s' by '%s')", song.ID, song.Title, song.Artist)
 }
 
 func printUsage() {
