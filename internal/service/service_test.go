@@ -352,7 +352,7 @@ func TestGetSongByID(t *testing.T) {
 	}
 
 	// Retrieve it using the internal method
-	song, err := service.getSongByID(songID)
+	song, err := service.GetSongByID(songID)
 	if err != nil {
 		t.Fatalf("getSongByID failed: %v", err)
 	}
@@ -366,7 +366,7 @@ func TestGetSongByID(t *testing.T) {
 	}
 
 	// Test with non-existent ID
-	_, err = service.getSongByID(99999)
+	_, err = service.GetSongByID(99999)
 	if err == nil {
 		t.Error("Expected error for non-existent song ID")
 	}

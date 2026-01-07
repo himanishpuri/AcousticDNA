@@ -144,7 +144,7 @@ func (s *AcousticService) MatchSong(ctx context.Context, audioPath string) ([]Ma
 			YouTubeID:  song.YouTubeID,
 			Score:      match.Count,
 			OffsetMs:   match.OffsetMs,
-			Confidence: float64(match.Count) / float64(len(queryPeaks)) * 100,
+			Confidence: float64(match.Count) / float64(len(queryFPs)) * 100,
 		})
 	}
 
