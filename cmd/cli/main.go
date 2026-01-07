@@ -1,0 +1,216 @@
+package main
+
+import (
+	"context"
+	"flag"
+	"fmt"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/himanishpuri/AcousticDNA/internal/service"
+	"github.com/himanishpuri/AcousticDNA/pkg/logger"
+)
+
+func main() {
+	// Initialize logger
+	log := logger.GetLogger()
+
+	// Print banner
+	printBanner()
+
+	if len(os.Args) < 2 {
+		printUsage()
+		os.Exit(1)
+	}
+
+	command := os.Args[1]
+	log.Infof("Executing command: %s", command)
+
+	switch command {
+	case "add":
+		handleAdd()
+	case "match":
+		handleMatch()
+	case "list":
+		handleList()
+	case "delete":
+		handleDelete()
+	default:
+		fmt.Printf("Unknown command: %s\n", command)
+		printUsage()
+		os.Exit(1)
+	}
+}
+
+func printBanner() {
+	banner := `
+   _                      _   _      ____  _   _    _    
+  / \   ___ ___  _   _ ___| |_(_) ___|  _ \| \ | |  / \   
+ / _ \ / __/ _ \| | | / __| __| |/ __| | | |  \| | / _ \  
+/ ___ \ (_| (_) | |_| \__ \ |_| | (__| |_| | |\  |/ ___ \ 
+\_/   \_/___\___/ \__,_|___/\__|_|\___|____/|_| \_/_/   \_/
+                                                            
+           Audio Fingerprinting CLI Tool
+`
+	fmt.Println(banner)
+}
+
+func handleAdd() {
+	log := logger.GetLogger()
+
+	// Manually extract audio file and flags
+	args := os.Args[2:]
+	var audioPath string
+	var flagArgs []string
+
+	// Separate the audio file path from flags
+	for i, arg := range args {
+		if !strings.HasPrefix(arg, "-") && audioPath == "" {
+			audioPath = arg
+		} else {
+			flagArgs = append(flagArgs, args[i:]...)
+			break
+		}
+	}
+
+	// Parse flags
+	addCmd := flag.NewFlagSet("add", flag.ExitOnError)
+	title := addCmd.String("title", "", "Song title (required)")
+	artist := addCmd.String("artist", "", "Artist name (required)")
+	youtube := addCmd.String("youtube", "", "YouTube ID (optional)")
+
+	addCmd.Parse(flagArgs)
+
+	if audioPath == "" {
+		fmt.Println("Error: audio file path required")
+		fmt.Println("Usage: acousticDNA add <audio_file> --title <title> --artist <artist> [--youtube <id>]")
+		os.Exit(1)
+	}
+
+	if *title == "" || *artist == "" {
+		fmt.Println("Error: --title and --artist are required")
+		log.Warn("Missing required arguments: title and artist")
+		os.Exit(1)
+	}
+
+	log.Infof("Adding song: '%s' by '%s' from file: %s", *title, *artist, audioPath)
+
+	// Create service
+	fmt.Println("\n🔧 Initializing service...")
+	svc, err := service.NewAcousticService()
+	if err != nil {
+		fmt.Printf("❌ Failed to create service: %v\n", err)
+		log.Errorf("Service initialization failed: %v", err)
+		os.Exit(1)
+	}
+	defer svc.Close()
+
+	// Add song
+	fmt.Println("🎵 Processing audio file...")
+	fmt.Println("   This may take a few moments for large files")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	songID, err := svc.AddSong(ctx, audioPath, *title, *artist, *youtube)
+	if err != nil {
+		fmt.Printf("\n❌ Failed to add song: %v\n", err)
+		log.Errorf("AddSong failed: %v", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("\n✅ Successfully added song to database!")
+	fmt.Printf("   ID:      %d\n", songID)
+	fmt.Printf("   Title:   %s\n", *title)
+	fmt.Printf("   Artist:  %s\n", *artist)
+	if *youtube != "" {
+		fmt.Printf("   YouTube: %s\n", *youtube)
+	}
+	log.Infof("Successfully added song ID=%d", songID)
+}
+
+func handleMatch() {
+	log := logger.GetLogger()
+
+	if len(os.Args) < 3 {
+		fmt.Println("Usage: acousticDNA match <audio_file>")
+		os.Exit(1)
+	}
+
+	audioPath := os.Args[2]
+	log.Infof("Matching audio file: %s", audioPath)
+
+	fmt.Println("\n🔧 Initializing service...")
+	svc, err := service.NewAcousticService()
+	if err != nil {
+		fmt.Printf("❌ Failed to create service: %v\n", err)
+		log.Errorf("Service initialization failed: %v", err)
+		os.Exit(1)
+	}
+	defer svc.Close()
+
+	fmt.Println("🔍 Analyzing audio file...")
+	fmt.Println("   Generating fingerprints and searching database")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	results, err := svc.MatchSong(ctx, audioPath)
+	if err != nil {
+		fmt.Printf("\n❌ Failed to match song: %v\n", err)
+		log.Errorf("MatchSong failed: %v", err)
+		os.Exit(1)
+	}
+
+	log.Infof("Match complete: found %d results", len(results))
+
+	if len(results) == 0 {
+		fmt.Println("\n❌ No matches found in database")
+		log.Info("No matches found")
+		return
+	}
+
+	fmt.Printf("\n✅ Found %d match(es)!\n", len(results))
+	fmt.Println("\n🎵 Top Matches:")
+	fmt.Println()
+
+	maxDisplay := 10
+	if len(results) < maxDisplay {
+		maxDisplay = len(results)
+	}
+
+	for i := 0; i < maxDisplay; i++ {
+		result := results[i]
+		fmt.Printf("%d. \"%s\" by %s\n", i+1, result.Title, result.Artist)
+		fmt.Printf("   Score: %d | Confidence: %.1f%% | Offset: %dms\n",
+			result.Score, result.Confidence, result.OffsetMs)
+		if result.YouTubeID != "" {
+			fmt.Printf("   YouTube: https://youtube.com/watch?v=%s\n", result.YouTubeID)
+		}
+		fmt.Println()
+	}
+
+	if len(results) > maxDisplay {
+		fmt.Printf("... and %d more matches\n", len(results)-maxDisplay)
+	}
+}
+
+func handleList() {
+	// TODO: Implement listing all songs
+	fmt.Println("List command not yet implemented")
+}
+
+func handleDelete() {
+	// TODO: Implement deleting a song
+	fmt.Println("Delete command not yet implemented")
+}
+
+func printUsage() {
+	fmt.Println("AcousticDNA - Audio Fingerprinting CLI")
+	fmt.Println("\nUsage:")
+	fmt.Println("  acousticDNA add <audio_file> --title <title> --artist <artist> [--youtube <id>]")
+	fmt.Println("  acousticDNA match <audio_file>")
+	fmt.Println("  acousticDNA list")
+	fmt.Println("  acousticDNA delete <song_id>")
+}

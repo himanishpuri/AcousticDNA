@@ -19,6 +19,9 @@ import (
 // Default DB file name (can be overridden with env var ACOUSTIC_DB_PATH)
 const DefaultDBFile = "acousticdna.sqlite3"
 
+// Error messages
+const errDBClientNil = "db client is nil"
+
 // DBClient wraps a GORM DB handle.
 type DBClient struct {
 	DB *gorm.DB
@@ -27,11 +30,9 @@ type DBClient struct {
 
 // Song model stores canonical metadata and external IDs.
 type Song struct {
-	ID    uint   `gorm:"primaryKey;autoIncrement"`
-	Title string `gorm:"uniqueIndex:idx_song_unique,priority:1;index:idx_song_meta,priority:1"
-				json:"title"`
-	Artist string `gorm:"uniqueIndex:idx_song_unique,priority:2;index:idx_song_meta,priority:2"
-				json:"artist"`
+	ID         uint   `gorm:"primaryKey;autoIncrement"`
+	Title      string `gorm:"uniqueIndex:idx_song_unique,priority:1;index:idx_song_meta,priority:1" json:"title"`
+	Artist     string `gorm:"uniqueIndex:idx_song_unique,priority:2;index:idx_song_meta,priority:2" json:"artist"`
 	YouTubeID  string `gorm:"index:idx_youtube_id" json:"youtube_id"`
 	SpotifyID  string `gorm:"index:idx_spotify_id" json:"spotify_id"`
 	DurationMs int    `json:"duration_ms"`
@@ -103,7 +104,7 @@ func (c *DBClient) Close() error {
 // This function is safe for concurrent use thanks to unique constraint on title+artist.
 func (c *DBClient) RegisterSong(title, artist, youtubeID string, durationMs int) (uint32, error) {
 	if c == nil || c.DB == nil {
-		return 0, errors.New("db client is nil")
+		return 0, errors.New(errDBClientNil)
 	}
 
 	var song Song
@@ -149,7 +150,7 @@ func (c *DBClient) RegisterSong(title, artist, youtubeID string, durationMs int)
 // DeleteSongByID deletes a song and all its fingerprints in a transaction.
 func (c *DBClient) DeleteSongByID(songID uint32) error {
 	if c == nil || c.DB == nil {
-		return errors.New("db client is nil")
+		return errors.New(errDBClientNil)
 	}
 	return c.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("song_id = ?", songID).Delete(&Fingerprint{}).Error; err != nil {
@@ -166,7 +167,7 @@ func (c *DBClient) DeleteSongByID(songID uint32) error {
 // It is efficient and uses GORM CreateInBatches under the hood.
 func (c *DBClient) StoreFingerprints(fp map[uint32][]model.Couple) error {
 	if c == nil || c.DB == nil {
-		return errors.New("db client is nil")
+		return errors.New(errDBClientNil)
 	}
 
 	// Prepare slices for batch insertion
@@ -198,7 +199,7 @@ func (c *DBClient) StoreFingerprints(fp map[uint32][]model.Couple) error {
 // GetCouplesByHash returns a slice of model.Couple for a given hash from DB.
 func (c *DBClient) GetCouplesByHash(hash uint32) ([]model.Couple, error) {
 	if c == nil || c.DB == nil {
-		return nil, errors.New("db client is nil")
+		return nil, errors.New(errDBClientNil)
 	}
 	var rows []Fingerprint
 	if err := c.DB.Where("hash = ?", hash).Find(&rows).Error; err != nil {
