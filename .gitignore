@@ -5,4 +5,3 @@ web/
 .env
 .env.example
 Makefile
-README.md
