@@ -434,11 +434,6 @@ AcousticDNA/
 ├── scripts/
 │   └── build-wasm.sh          # WASM build automation
 │
-├── Dockerfile                 # Multi-stage Docker build
-├── docker-compose.yml         # Production deployment
-├── docker-compose.dev.yml     # Development deployment
-├── .dockerignore              # Docker build exclusions
-├── acousticdna                # CLI wrapper for Docker
 ├── go.mod                     # Go module dependencies
 ├── go.sum                     # Dependency checksums
 └── README.md                  # This file
@@ -476,7 +471,7 @@ AcousticDNA/
 
 - Audio is too quiet or silent
 - Try normalizing audio volume
-- Ensure audio is at least 3-5 seconds long
+- Ensure audio is at least 5-15 seconds long
 
 **"WASM initialization failed"**
 
