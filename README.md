@@ -53,7 +53,7 @@ GOOS=js GOARCH=wasm go build -o web/public/fingerprint.wasm ./cmd/wasm/
 ./acousticDNA add song.mp3 --title "Sandstorm" --artist "Darude"
 
 # Add from YouTube
-./acousticDNA youtube "https://youtube.com/watch?v=VIDEO_ID"
+./acousticDNA add --youtube-url "https://youtube.com/watch?v=VIDEO_ID"
 
 # Match audio
 ./acousticDNA match recording.wav
