@@ -217,6 +217,40 @@ func (c *DBClient) GetCouplesByHash(hash uint32) ([]model.Couple, error) {
 	return out, nil
 }
 
+// GetCouplesByHashes retrieves couples for multiple hashes in a single query.
+// This is significantly more efficient than calling GetCouplesByHash in a loop
+// as it uses a single SQL query with an IN clause.
+func (c *DBClient) GetCouplesByHashes(hashes []uint32) (map[uint32][]model.Couple, error) {
+	if c == nil || c.DB == nil {
+		return nil, errors.New(errDBClientNil)
+	}
+	if len(hashes) == 0 {
+		return make(map[uint32][]model.Couple), nil
+	}
+
+	// Convert []uint32 to []interface{} for GORM's IN clause
+	hashesInterface := make([]interface{}, len(hashes))
+	for i, h := range hashes {
+		hashesInterface[i] = h
+	}
+
+	var rows []Fingerprint
+	if err := c.DB.Where("hash IN ?", hashesInterface).Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("batch querying fingerprints: %w", err)
+	}
+
+	// Group results by hash
+	result := make(map[uint32][]model.Couple)
+	for _, r := range rows {
+		result[r.Hash] = append(result[r.Hash], model.Couple{
+			SongID:       uint32(r.SongID),
+			AnchorTimeMs: r.AnchorTimeMs,
+		})
+	}
+
+	return result, nil
+}
+
 // QueryTopMatches is a convenience wrapper that fetches all couple lists for query hashes and
 // performs in-memory voting. It expects queryHashes in the same packed form your hash.go creates.
 // This mirrors earlier QueryFingerprints logic but uses the DB for bucket lookup.

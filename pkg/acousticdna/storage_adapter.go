@@ -56,6 +56,10 @@ func (s *storageAdapter) GetCouplesByHash(hash uint32) ([]model.Couple, error) {
 	return couples, nil
 }
 
+func (s *storageAdapter) GetCouplesByHashes(hashes []uint32) (map[uint32][]model.Couple, error) {
+	return s.db.GetCouplesByHashes(hashes)
+}
+
 func (s *storageAdapter) DeleteSongByID(songID uint32) error {
 	return s.db.DeleteSongByID(songID)
 }

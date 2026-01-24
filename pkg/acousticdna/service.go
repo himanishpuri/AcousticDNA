@@ -143,25 +143,15 @@ func (s *acousticService) MatchSong(ctx context.Context, audioPath string) ([]Ma
 	queryFPs := fingerprint.Fingerprint(queryPeaks, 0) // songID=0 for query
 	s.log.Infof("Generated %d query hashes", len(queryFPs))
 
-	// 6. Build database fingerprint map by querying each hash
-	dbMap := make(map[uint32][]model.Couple)
+	// 6. Build database fingerprint map using batch retrieval (more efficient)
+	hashList := make([]uint32, 0, len(queryFPs))
 	for hash := range queryFPs {
-		couples, err := s.storage.GetCouplesByHash(hash)
-		if err != nil {
-			s.log.Warnf("Failed to get couples for hash %d: %v", hash, err)
-			continue
-		}
-		if len(couples) > 0 {
-			// Convert Couple to model.Couple
-			modelCouples := make([]model.Couple, len(couples))
-			for i, c := range couples {
-				modelCouples[i] = model.Couple{
-					SongID:       c.SongID,
-					AnchorTimeMs: c.AnchorTimeMs,
-				}
-			}
-			dbMap[hash] = modelCouples
-		}
+		hashList = append(hashList, hash)
+	}
+
+	dbMap, err := s.storage.GetCouplesByHashes(hashList)
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve fingerprints from database: %w", err)
 	}
 	s.log.Infof("Retrieved couples for %d/%d hashes", len(dbMap), len(queryFPs))
 
@@ -186,6 +176,109 @@ func (s *acousticService) MatchSong(ctx context.Context, audioPath string) ([]Ma
 		}
 
 		confidence := s.calculateConfidence(match.Count, len(queryFPs), dbFingerprintCount)
+
+		results = append(results, MatchResult{
+			SongID:     match.SongID,
+			Title:      song.Title,
+			Artist:     song.Artist,
+			YouTubeID:  song.YouTubeID,
+			Score:      match.Count,
+			OffsetMs:   match.OffsetMs,
+			Confidence: confidence,
+		})
+	}
+
+	s.log.Infof("Returning %d matches", len(results))
+	return results, nil
+}
+
+// MatchHashes finds matches for pre-computed hashes.
+// This is optimized for WASM clients that generate fingerprints locally
+// and only send hashes to the server for matching (privacy-preserving).
+func (s *acousticService) MatchHashes(ctx context.Context, hashes map[uint32]uint32) ([]MatchResult, error) {
+	s.log.Infof("Matching %d pre-computed hashes", len(hashes))
+
+	if len(hashes) == 0 {
+		return []MatchResult{}, nil
+	}
+
+	// 1. Build hash list for batch retrieval
+	hashList := make([]uint32, 0, len(hashes))
+	for hash := range hashes {
+		hashList = append(hashList, hash)
+	}
+
+	// 2. Retrieve all matches from database in a single batch query
+	dbMap, err := s.storage.GetCouplesByHashes(hashList)
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve fingerprints from database: %w", err)
+	}
+	s.log.Infof("Retrieved couples for %d/%d hashes", len(dbMap), len(hashes))
+
+	// 3. Perform time-coherence voting to find matches
+	// Build offset votes: map[songID]map[offset]count
+	votes := make(map[uint32]map[int32]int)
+
+	for hash, queryAnchorTime := range hashes {
+		dbCouples, exists := dbMap[hash]
+		if !exists {
+			continue
+		}
+
+		for _, couple := range dbCouples {
+			// Calculate time offset: dbTime - queryTime
+			offset := int32(couple.AnchorTimeMs) - int32(queryAnchorTime)
+
+			songVotes := votes[couple.SongID]
+			if songVotes == nil {
+				songVotes = make(map[int32]int)
+				votes[couple.SongID] = songVotes
+			}
+			songVotes[offset]++
+		}
+	}
+
+	// 4. Find the best (most voted) offset for each song
+	matches := make([]model.Match, 0)
+	for songID, offsetVotes := range votes {
+		bestOffset := int32(0)
+		bestCount := 0
+
+		for offset, count := range offsetVotes {
+			if count > bestCount {
+				bestCount = count
+				bestOffset = offset
+			}
+		}
+
+		if bestCount > 0 {
+			matches = append(matches, model.Match{
+				SongID:   songID,
+				OffsetMs: bestOffset,
+				Count:    bestCount,
+			})
+		}
+	}
+
+	s.log.Infof("Found %d candidate matches", len(matches))
+
+	// 5. Convert to results with song metadata
+	results := make([]MatchResult, 0, len(matches))
+	for _, match := range matches {
+		song, err := s.GetSongByID(match.SongID)
+		if err != nil {
+			s.log.Warnf("Failed to get song %d: %v", match.SongID, err)
+			continue
+		}
+
+		// Get database song's fingerprint count for confidence calculation
+		dbFingerprintCount, err := s.storage.GetFingerprintCount(match.SongID)
+		if err != nil {
+			s.log.Warnf("Failed to get fingerprint count for song %d: %v", match.SongID, err)
+			dbFingerprintCount = len(hashes) // Fallback
+		}
+
+		confidence := s.calculateConfidence(match.Count, len(hashes), dbFingerprintCount)
 
 		results = append(results, MatchResult{
 			SongID:     match.SongID,

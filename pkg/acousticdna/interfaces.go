@@ -33,6 +33,17 @@ type Service interface {
 	// Returns a slice of match results sorted by confidence, or an error.
 	MatchSong(ctx context.Context, audioPath string) ([]MatchResult, error)
 
+	// MatchHashes finds matches for pre-computed hashes (useful for WASM clients).
+	// This allows clients to generate fingerprints locally and only send hashes
+	// to the server for matching, preserving privacy.
+	//
+	// Parameters:
+	//   - ctx: Context for cancellation and timeout control
+	//   - hashes: Map of hash values to their anchor times in milliseconds
+	//
+	// Returns a slice of match results sorted by confidence, or an error.
+	MatchHashes(ctx context.Context, hashes map[uint32]uint32) ([]MatchResult, error)
+
 	// GetSongByID retrieves a song's metadata by its database ID.
 	GetSongByID(songID uint32) (*Song, error)
 
@@ -60,6 +71,11 @@ type Storage interface {
 
 	// GetCouplesByHash retrieves all couples for a given hash.
 	GetCouplesByHash(hash uint32) ([]model.Couple, error)
+
+	// GetCouplesByHashes retrieves couples for multiple hashes in a single query.
+	// This is much more efficient than calling GetCouplesByHash in a loop.
+	// Returns a map where keys are hashes and values are the couples for that hash.
+	GetCouplesByHashes(hashes []uint32) (map[uint32][]model.Couple, error)
 
 	// DeleteSongByID removes a song and all its fingerprints.
 	DeleteSongByID(songID uint32) error
