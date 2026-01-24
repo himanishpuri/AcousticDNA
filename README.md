@@ -2,7 +2,6 @@
 
 [![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go)](https://go.dev/)
 [![WASM](https://img.shields.io/badge/WASM-Enabled-orange?logo=webassembly)](https://webassembly.org/)
-[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker)](https://www.docker.com/)
 
 **Audio fingerprinting system** built from scratch in Go. Identify songs from short audio clips using Shazam-like algorithms, with optional **client-side WebAssembly processing** for complete privacy.
 
@@ -14,28 +13,11 @@
 - 🔒 **Privacy-Preserving** - Optional WASM processing keeps audio in browser
 - 🎼 **Universal Audio Support** - MP3, WAV, FLAC, AAC, M4A, OGG via FFmpeg
 - 📹 **YouTube Integration** - Auto-download and extract metadata from URLs
-- 🐳 **Docker Ready** - One-command deployment with docker-compose
 - 💻 **Multiple Interfaces** - CLI tool, REST API, and WASM web frontend
 
 ---
 
 ## 🚀 Installation
-
-### Docker (Recommended)
-
-```bash
-# Clone repository
-git clone https://github.com/himanishpuri/AcousticDNA.git
-cd AcousticDNA
-
-# Start with docker-compose
-docker compose up -d
-
-# Access:
-# - Web UI: http://localhost:8080
-# - API: http://localhost:8080/api/
-# - CLI: ./acousticdna list
-```
 
 ### Local Installation
 
@@ -319,18 +301,6 @@ curl -X POST http://localhost:8080/api/songs/youtube \
   -origins "*"
 ```
 
-**Docker:**
-
-```yaml
-environment:
-   - ACOUSTIC_DB_PATH=/app/data/acousticdna.sqlite3
-   - ACOUSTIC_TEMP_DIR=/app/temp
-   - PORT=8080
-volumes:
-   - ./data:/app/data
-   - ./temp:/app/temp
-```
-
 ### DSP Parameters
 
 | Parameter           | Value        | Description                  |
@@ -461,7 +431,6 @@ AcousticDNA/
 - Clean architecture with interface-based design
 - Comprehensive error handling and logging
 - Context-based timeout management
-- Production-ready Docker deployment
 
 ---
 
