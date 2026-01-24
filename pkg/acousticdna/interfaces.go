@@ -3,7 +3,7 @@ package acousticdna
 import (
 	"context"
 
-	"github.com/himanishpuri/AcousticDNA/pkg/acousticdna/model"
+	"github.com/himanishpuri/AcousticDNA/pkg/models"
 )
 
 // Service defines the core AcousticDNA audio fingerprinting operations.
@@ -16,12 +16,12 @@ type Service interface {
 	// Parameters:
 	//   - ctx: Context for cancellation and timeout control
 	//   - audioPath: Path to the audio file to process
-	//   - title: Song title
+	//   - title: models.Song title
 	//   - artist: Artist name
 	//   - youtubeID: YouTube video ID (optional, can be empty)
 	//
 	// Returns the database ID of the added song, or an error.
-	AddSong(ctx context.Context, audioPath, title, artist, youtubeID string) (uint32, error)
+	AddSong(ctx context.Context, audioPath, title, artist, youtubeID string) (string, error)
 
 	// MatchSong finds matches for a query audio file by comparing its fingerprint
 	// against the database.
@@ -31,7 +31,7 @@ type Service interface {
 	//   - audioPath: Path to the query audio file
 	//
 	// Returns a slice of match results sorted by confidence, or an error.
-	MatchSong(ctx context.Context, audioPath string) ([]MatchResult, error)
+	MatchSong(ctx context.Context, audioPath string) ([]models.MatchResult, error)
 
 	// MatchHashes finds matches for pre-computed hashes (useful for WASM clients).
 	// This allows clients to generate fingerprints locally and only send hashes
@@ -42,16 +42,16 @@ type Service interface {
 	//   - hashes: Map of hash values to their anchor times in milliseconds
 	//
 	// Returns a slice of match results sorted by confidence, or an error.
-	MatchHashes(ctx context.Context, hashes map[uint32]uint32) ([]MatchResult, error)
+	MatchHashes(ctx context.Context, hashes map[uint32]uint32) ([]models.MatchResult, error)
 
 	// GetSongByID retrieves a song's metadata by its database ID.
-	GetSongByID(songID uint32) (*Song, error)
+	GetSongByID(songID string) (*models.Song, error)
 
 	// ListSongs returns all songs in the database.
-	ListSongs() ([]Song, error)
+	ListSongs() ([]models.Song, error)
 
 	// DeleteSong removes a song and all its fingerprints from the database.
-	DeleteSong(songID uint32) error
+	DeleteSong(songID string) error
 
 	// Close releases all resources held by the service (database connections, etc).
 	// Should be called when the service is no longer needed.
@@ -63,31 +63,31 @@ type Service interface {
 type Storage interface {
 	// RegisterSong adds or updates a song in the database.
 	// Returns the song ID.
-	RegisterSong(title, artist, youtubeID string, durationMs int) (uint32, error)
+	RegisterSong(title, artist, youtubeID string, durationMs int) (string, error)
 
 	// StoreFingerprints saves fingerprint hashes and their associated metadata.
 	// The map key is the hash, values are the couples (songID + anchor time).
-	StoreFingerprints(fingerprints map[uint32][]model.Couple) error
+	StoreFingerprints(fingerprints map[uint32][]models.Couple) error
 
 	// GetCouplesByHash retrieves all couples for a given hash.
-	GetCouplesByHash(hash uint32) ([]model.Couple, error)
+	GetCouplesByHash(hash uint32) ([]models.Couple, error)
 
 	// GetCouplesByHashes retrieves couples for multiple hashes in a single query.
 	// This is much more efficient than calling GetCouplesByHash in a loop.
 	// Returns a map where keys are hashes and values are the couples for that hash.
-	GetCouplesByHashes(hashes []uint32) (map[uint32][]model.Couple, error)
+	GetCouplesByHashes(hashes []uint32) (map[uint32][]models.Couple, error)
 
 	// DeleteSongByID removes a song and all its fingerprints.
-	DeleteSongByID(songID uint32) error
+	DeleteSongByID(songID string) error
 
 	// GetSongByID retrieves a song's metadata.
-	GetSongByID(songID uint32) (*Song, error)
+	GetSongByID(songID string) (*models.Song, error)
 
 	// GetFingerprintCount returns the number of fingerprints for a song.
-	GetFingerprintCount(songID uint32) (int, error)
+	GetFingerprintCount(songID string) (int, error)
 
 	// ListSongs returns all songs in the database.
-	ListSongs() ([]Song, error)
+	ListSongs() ([]models.Song, error)
 
 	// Close releases database resources.
 	Close() error

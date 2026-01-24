@@ -104,8 +104,8 @@ func generateFingerprint(this js.Value, args []js.Value) interface{} {
 	}
 
 	// Generate fingerprint hashes
-	// Use songID=0 for query fingerprints (not storing in database)
-	fingerprintMap := fingerprint.Fingerprint(peaks, 0)
+	// Use empty string for query fingerprints (not storing in database)
+	fingerprintMap := fingerprint.Fingerprint(peaks, "")
 	if len(fingerprintMap) == 0 {
 		return makeErrorResponse(ErrorHashGeneration, "No fingerprint hashes generated")
 	}

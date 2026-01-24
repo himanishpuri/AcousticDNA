@@ -8,12 +8,12 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"time"
 
 	"github.com/himanishpuri/AcousticDNA/pkg/acousticdna"
 	"github.com/himanishpuri/AcousticDNA/pkg/acousticdna/audio"
 	"github.com/himanishpuri/AcousticDNA/pkg/logger"
+	"github.com/himanishpuri/AcousticDNA/pkg/models"
 	"github.com/himanishpuri/AcousticDNA/pkg/utils"
 )
 
@@ -53,7 +53,7 @@ func (s *Server) respondJSON(w http.ResponseWriter, statusCode int, data interfa
 
 // respondError writes an error response
 func (s *Server) respondError(w http.ResponseWriter, statusCode int, message string) {
-	s.respondJSON(w, statusCode, ErrorResponse{
+	s.respondJSON(w, statusCode, models.ErrorResponse{
 		Error:   http.StatusText(statusCode),
 		Message: message,
 		Code:    statusCode,
@@ -101,7 +101,7 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.respondJSON(w, http.StatusOK, MetricsResponse{
+	s.respondJSON(w, http.StatusOK, models.MetricsResponse{
 		Status:       "healthy",
 		DatabasePath: s.config.DBPath,
 		SongCount:    len(songs),
@@ -118,9 +118,9 @@ func (s *Server) handleListSongs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	songDTOs := make([]SongDTO, len(songs))
+	songDTOs := make([]models.SongDTO, len(songs))
 	for i, song := range songs {
-		songDTOs[i] = SongDTO{
+		songDTOs[i] = models.SongDTO{
 			ID:         song.ID,
 			Title:      song.Title,
 			Artist:     song.Artist,
@@ -129,22 +129,22 @@ func (s *Server) handleListSongs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	s.respondJSON(w, http.StatusOK, ListSongsResponse{
+	s.respondJSON(w, http.StatusOK, models.ListSongsResponse{
 		Songs: songDTOs,
 		Count: len(songDTOs),
 	})
 }
 
 // handleGetSong handles GET /api/songs/{id}
-func (s *Server) handleGetSong(w http.ResponseWriter, r *http.Request, songID uint32) {
+func (s *Server) handleGetSong(w http.ResponseWriter, r *http.Request, songID string) {
 	song, err := s.service.GetSongByID(songID)
 	if err != nil {
-		s.log.Warnf("Song not found: %d", songID)
-		s.respondError(w, http.StatusNotFound, fmt.Sprintf("Song with ID %d not found", songID))
+		s.log.Warnf("Song not found: %s", songID)
+		s.respondError(w, http.StatusNotFound, fmt.Sprintf("Song with ID %s not found", songID))
 		return
 	}
 
-	s.respondJSON(w, http.StatusOK, SongDTO{
+	s.respondJSON(w, http.StatusOK, models.SongDTO{
 		ID:         song.ID,
 		Title:      song.Title,
 		Artist:     song.Artist,
@@ -154,23 +154,23 @@ func (s *Server) handleGetSong(w http.ResponseWriter, r *http.Request, songID ui
 }
 
 // handleDeleteSong handles DELETE /api/songs/{id}
-func (s *Server) handleDeleteSong(w http.ResponseWriter, r *http.Request, songID uint32) {
+func (s *Server) handleDeleteSong(w http.ResponseWriter, r *http.Request, songID string) {
 	// Get song info before deletion
 	song, err := s.service.GetSongByID(songID)
 	if err != nil {
-		s.log.Warnf("Song not found for deletion: %d", songID)
-		s.respondError(w, http.StatusNotFound, fmt.Sprintf("Song with ID %d not found", songID))
+		s.log.Warnf("Song not found for deletion: %s", songID)
+		s.respondError(w, http.StatusNotFound, fmt.Sprintf("Song with ID %s not found", songID))
 		return
 	}
 
 	if err := s.service.DeleteSong(songID); err != nil {
-		s.log.Errorf("Failed to delete song %d: %v", songID, err)
+		s.log.Errorf("Failed to delete song %s: %v", songID, err)
 		s.respondError(w, http.StatusInternalServerError, "Failed to delete song")
 		return
 	}
 
-	s.log.Infof("Deleted song: %s by %s (ID: %d)", song.Title, song.Artist, songID)
-	s.respondJSON(w, http.StatusOK, DeleteSongResponse{
+	s.log.Infof("Deleted song: %s by %s (ID: %s)", song.Title, song.Artist, songID)
+	s.respondJSON(w, http.StatusOK, models.DeleteSongResponse{
 		Message: "Song deleted successfully",
 		ID:      songID,
 	})
@@ -235,7 +235,7 @@ func (s *Server) handleAddSongFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.log.Infof("Successfully added song: %s by %s (ID: %d)", title, artist, songID)
-	s.respondJSON(w, http.StatusCreated, AddSongResponse{
+	s.respondJSON(w, http.StatusCreated, models.AddSongResponse{
 		Message:   "Song added successfully",
 		ID:        songID,
 		Title:     title,
@@ -249,7 +249,7 @@ func (s *Server) handleAddSongYouTube(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
 	defer cancel()
 
-	var req AddSongYouTubeRequest
+	var req models.AddSongYouTubeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		s.log.Errorf("Failed to decode request: %v", err)
 		s.respondError(w, http.StatusBadRequest, "Invalid request body")
@@ -305,7 +305,7 @@ func (s *Server) handleAddSongYouTube(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.log.Infof("Successfully added song from YouTube: %s by %s (ID: %d)", title, artist, songID)
-	s.respondJSON(w, http.StatusCreated, AddSongResponse{
+	s.respondJSON(w, http.StatusCreated, models.AddSongResponse{
 		Message:   "Song added successfully from YouTube",
 		ID:        songID,
 		Title:     title,
@@ -363,9 +363,9 @@ func (s *Server) handleMatchFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Convert to DTOs
-	matchDTOs := make([]MatchResultDTO, len(matches))
+	matchDTOs := make([]models.MatchResultDTO, len(matches))
 	for i, match := range matches {
-		matchDTOs[i] = MatchResultDTO{
+		matchDTOs[i] = models.MatchResultDTO{
 			SongID:     match.SongID,
 			Title:      match.Title,
 			Artist:     match.Artist,
@@ -377,7 +377,7 @@ func (s *Server) handleMatchFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.log.Infof("Match complete: found %d matches", len(matchDTOs))
-	s.respondJSON(w, http.StatusOK, MatchHashesResponse{
+	s.respondJSON(w, http.StatusOK, models.MatchHashesResponse{
 		Matches: matchDTOs,
 		Count:   len(matchDTOs),
 	})
@@ -388,7 +388,7 @@ func (s *Server) handleMatchHashes(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 
-	var req MatchHashesRequest
+	var req models.MatchHashesRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		s.log.Errorf("Failed to decode request: %v", err)
 		s.respondError(w, http.StatusBadRequest, "Invalid request body")
@@ -409,7 +409,7 @@ func (s *Server) handleMatchHashes(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Log warning for large batches
-	if len(hashMap) >= HashWarningThreshold {
+	if len(hashMap) >= models.HashWarningThreshold {
 		s.log.Warnf("Large hash batch received: %d hashes", len(hashMap))
 	}
 
@@ -424,9 +424,9 @@ func (s *Server) handleMatchHashes(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Convert to DTOs
-	matchDTOs := make([]MatchResultDTO, len(matches))
+	matchDTOs := make([]models.MatchResultDTO, len(matches))
 	for i, match := range matches {
-		matchDTOs[i] = MatchResultDTO{
+		matchDTOs[i] = models.MatchResultDTO{
 			SongID:     match.SongID,
 			Title:      match.Title,
 			Artist:     match.Artist,
@@ -438,7 +438,7 @@ func (s *Server) handleMatchHashes(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.log.Infof("Hash match complete: found %d matches", len(matchDTOs))
-	s.respondJSON(w, http.StatusOK, MatchHashesResponse{
+	s.respondJSON(w, http.StatusOK, models.MatchHashesResponse{
 		Matches: matchDTOs,
 		Count:   len(matchDTOs),
 	})
@@ -465,17 +465,11 @@ func (s *Server) handleSong(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := strconv.ParseUint(idStr, 10, 32)
-	if err != nil {
-		s.respondError(w, http.StatusBadRequest, "Invalid song ID")
-		return
-	}
-
 	switch r.Method {
 	case http.MethodGet:
-		s.handleGetSong(w, r, uint32(id))
+		s.handleGetSong(w, r, idStr)
 	case http.MethodDelete:
-		s.handleDeleteSong(w, r, uint32(id))
+		s.handleDeleteSong(w, r, idStr)
 	default:
 		s.respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
 	}

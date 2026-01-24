@@ -4,7 +4,7 @@ import (
 	"math"
 	"sort"
 
-	"github.com/himanishpuri/AcousticDNA/pkg/acousticdna/model"
+	"github.com/himanishpuri/AcousticDNA/pkg/models"
 )
 
 // ------------------------ Fingerprinting (build DB entries) ------------------------
@@ -12,11 +12,11 @@ import (
 // Fingerprint produces a map from hash -> []Couple for the provided peaks and songID.
 // It uses a time-windowed fan-out: for each anchor, pair with up to FanOut subsequent
 // peaks that are within MaxDeltaMs.
-func Fingerprint(peaks []Peak, songID uint32) map[uint32][]model.Couple {
+func Fingerprint(peaks []Peak, songID string) map[uint32][]models.Couple {
 	// Ensure time-sorted order
 	sort.Slice(peaks, func(i, j int) bool { return peaks[i].Time < peaks[j].Time })
 
-	fp := make(map[uint32][]model.Couple)
+	fp := make(map[uint32][]models.Couple)
 	for i := 0; i < len(peaks); i++ {
 		anchor := peaks[i]
 		paired := 0
@@ -28,7 +28,7 @@ func Fingerprint(peaks []Peak, songID uint32) map[uint32][]model.Couple {
 				// skip if not representable or delta out of range
 				continue
 			}
-			cou := model.Couple{SongID: songID, AnchorTimeMs: uint32(math.Round(anchor.Time * 1000.0))}
+			cou := models.Couple{SongID: songID, AnchorTimeMs: uint32(math.Round(anchor.Time * 1000.0))}
 			fp[addr] = append(fp[addr], cou)
 			paired++
 		}
@@ -37,7 +37,7 @@ func Fingerprint(peaks []Peak, songID uint32) map[uint32][]model.Couple {
 }
 
 // MergeFingerprints merges src into dst (appends couples for same hash keys).
-func MergeFingerprints(dst map[uint32][]model.Couple, src map[uint32][]model.Couple) {
+func MergeFingerprints(dst map[uint32][]models.Couple, src map[uint32][]models.Couple) {
 	for k, v := range src {
 		dst[k] = append(dst[k], v...)
 	}
@@ -48,12 +48,12 @@ func MergeFingerprints(dst map[uint32][]model.Couple, src map[uint32][]model.Cou
 // QueryFingerprints takes query peaks and a fingerprint database (map[hash][]Couple)
 // and returns ranked matches (by vote count). The top results are returned in descending
 // order of vote count. The function uses the same pairing/fanout rules for the query.
-func QueryFingerprints(queryPeaks []Peak, db map[uint32][]model.Couple) []model.Match {
+func QueryFingerprints(queryPeaks []Peak, db map[uint32][]models.Couple) []models.Match {
 	// Build query hashes (pairs) using same policy as Fingerprint
 	sort.Slice(queryPeaks, func(i, j int) bool { return queryPeaks[i].Time < queryPeaks[j].Time })
 
 	// votes[songID][offsetMs] = count
-	votes := make(map[uint32]map[int32]int)
+	votes := make(map[string]map[int32]int)
 
 	for i := 0; i < len(queryPeaks); i++ {
 		anchor := queryPeaks[i]
@@ -82,7 +82,7 @@ func QueryFingerprints(queryPeaks []Peak, db map[uint32][]model.Couple) []model.
 	}
 
 	// Flatten votes into []Match and find top results
-	matches := make([]model.Match, 0)
+	matches := make([]models.Match, 0)
 	for songID, offsets := range votes {
 		// find best offset for this song
 		bestOffset := int32(0)
@@ -94,7 +94,7 @@ func QueryFingerprints(queryPeaks []Peak, db map[uint32][]model.Couple) []model.
 			}
 		}
 		if bestCount > 0 {
-			matches = append(matches, model.Match{SongID: songID, OffsetMs: bestOffset, Count: bestCount})
+			matches = append(matches, models.Match{SongID: songID, OffsetMs: bestOffset, Count: bestCount})
 		}
 	}
 

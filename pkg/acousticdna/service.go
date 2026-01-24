@@ -1,3 +1,6 @@
+//go:build !js && !wasm
+// +build !js,!wasm
+
 package acousticdna
 
 import (
@@ -7,8 +10,8 @@ import (
 
 	"github.com/himanishpuri/AcousticDNA/pkg/acousticdna/audio"
 	"github.com/himanishpuri/AcousticDNA/pkg/acousticdna/fingerprint"
-	"github.com/himanishpuri/AcousticDNA/pkg/acousticdna/model"
 	"github.com/himanishpuri/AcousticDNA/pkg/logger"
+	"github.com/himanishpuri/AcousticDNA/pkg/models"
 )
 
 // acousticService is the default implementation of the Service interface.
@@ -49,7 +52,7 @@ func NewService(opts ...Option) (Service, error) {
 }
 
 // AddSong processes an audio file and stores its fingerprint in the database.
-func (s *acousticService) AddSong(ctx context.Context, audioPath, title, artist, youtubeID string) (uint32, error) {
+func (s *acousticService) AddSong(ctx context.Context, audioPath, title, artist, youtubeID string) (string, error) {
 	s.log.Infof("Processing song: %s by %s", title, artist)
 
 	// 1. Convert to mono WAV
@@ -57,19 +60,19 @@ func (s *acousticService) AddSong(ctx context.Context, audioPath, title, artist,
 		SampleRate: s.config.SampleRate,
 	})
 	if err != nil {
-		return 0, fmt.Errorf("audio conversion failed: %w", err)
+		return "", fmt.Errorf("audio conversion failed: %w", err)
 	}
 
 	// 2. Read WAV file to get samples for duration calculation
 	samples, sampleRate, err := audio.ReadWavAsFloat64(wavPath)
 	if err != nil {
-		return 0, fmt.Errorf("failed to read WAV file: %w", err)
+		return "", fmt.Errorf("failed to read WAV file: %w", err)
 	}
 
 	// 3. Generate spectrogram
 	spec, _, err := fingerprint.ComputeSpectrogram(wavPath, 0, 0)
 	if err != nil {
-		return 0, fmt.Errorf("spectrogram generation failed: %w", err)
+		return "", fmt.Errorf("spectrogram generation failed: %w", err)
 	}
 
 	// 4. Extract peaks
@@ -80,19 +83,19 @@ func (s *acousticService) AddSong(ctx context.Context, audioPath, title, artist,
 	// 5. Register song in DB
 	songID, err := s.storage.RegisterSong(title, artist, youtubeID, int(duration*1000))
 	if err != nil {
-		return 0, fmt.Errorf("failed to register song: %w", err)
+		return "", fmt.Errorf("failed to register song: %w", err)
 	}
 
 	// 6. Generate fingerprints
 	fps := fingerprint.Fingerprint(peaks, songID)
 	s.log.Infof("Generated %d unique hashes", len(fps))
 
-	// Convert model.Couple to Couple for storage
-	storageFPs := make(map[uint32][]model.Couple)
+	// Convert models.Couple to Couple for storage
+	storageFPs := make(map[uint32][]models.Couple)
 	for hash, modelCouples := range fps {
-		couples := make([]model.Couple, len(modelCouples))
+		couples := make([]models.Couple, len(modelCouples))
 		for i, mc := range modelCouples {
-			couples[i] = model.Couple{
+			couples[i] = models.Couple{
 				SongID:       mc.SongID,
 				AnchorTimeMs: mc.AnchorTimeMs,
 			}
@@ -103,15 +106,15 @@ func (s *acousticService) AddSong(ctx context.Context, audioPath, title, artist,
 	// 7. Store fingerprints
 	if err := s.storage.StoreFingerprints(storageFPs); err != nil {
 		s.storage.DeleteSongByID(songID) // Rollback
-		return 0, fmt.Errorf("failed to store fingerprints: %w", err)
+		return "", fmt.Errorf("failed to store fingerprints: %w", err)
 	}
 
-	s.log.Infof("Successfully added song ID=%d", songID)
+	s.log.Infof("Successfully added song ID=%s", songID)
 	return songID, nil
 }
 
 // MatchSong finds matches for a query audio file.
-func (s *acousticService) MatchSong(ctx context.Context, audioPath string) ([]MatchResult, error) {
+func (s *acousticService) MatchSong(ctx context.Context, audioPath string) ([]models.MatchResult, error) {
 	s.log.Infof("Matching audio: %s", audioPath)
 
 	// 1. Convert to mono WAV
@@ -140,7 +143,7 @@ func (s *acousticService) MatchSong(ctx context.Context, audioPath string) ([]Ma
 	s.log.Infof("Query has %d peaks", len(queryPeaks))
 
 	// 5. Generate query fingerprints
-	queryFPs := fingerprint.Fingerprint(queryPeaks, 0) // songID=0 for query
+	queryFPs := fingerprint.Fingerprint(queryPeaks, "") // empty string for query
 	s.log.Infof("Generated %d query hashes", len(queryFPs))
 
 	// 6. Build database fingerprint map using batch retrieval (more efficient)
@@ -160,7 +163,7 @@ func (s *acousticService) MatchSong(ctx context.Context, audioPath string) ([]Ma
 	s.log.Infof("Found %d candidate matches", len(matches))
 
 	// 8. Convert to results with song info
-	results := make([]MatchResult, 0, len(matches))
+	results := make([]models.MatchResult, 0, len(matches))
 	for _, match := range matches {
 		song, err := s.GetSongByID(match.SongID)
 		if err != nil {
@@ -177,7 +180,7 @@ func (s *acousticService) MatchSong(ctx context.Context, audioPath string) ([]Ma
 
 		confidence := s.calculateConfidence(match.Count, len(queryFPs), dbFingerprintCount)
 
-		results = append(results, MatchResult{
+		results = append(results, models.MatchResult{
 			SongID:     match.SongID,
 			Title:      song.Title,
 			Artist:     song.Artist,
@@ -195,11 +198,11 @@ func (s *acousticService) MatchSong(ctx context.Context, audioPath string) ([]Ma
 // MatchHashes finds matches for pre-computed hashes.
 // This is optimized for WASM clients that generate fingerprints locally
 // and only send hashes to the server for matching (privacy-preserving).
-func (s *acousticService) MatchHashes(ctx context.Context, hashes map[uint32]uint32) ([]MatchResult, error) {
+func (s *acousticService) MatchHashes(ctx context.Context, hashes map[uint32]uint32) ([]models.MatchResult, error) {
 	s.log.Infof("Matching %d pre-computed hashes", len(hashes))
 
 	if len(hashes) == 0 {
-		return []MatchResult{}, nil
+		return []models.MatchResult{}, nil
 	}
 
 	// 1. Build hash list for batch retrieval
@@ -217,7 +220,7 @@ func (s *acousticService) MatchHashes(ctx context.Context, hashes map[uint32]uin
 
 	// 3. Perform time-coherence voting to find matches
 	// Build offset votes: map[songID]map[offset]count
-	votes := make(map[uint32]map[int32]int)
+	votes := make(map[string]map[int32]int)
 
 	for hash, queryAnchorTime := range hashes {
 		dbCouples, exists := dbMap[hash]
@@ -239,7 +242,7 @@ func (s *acousticService) MatchHashes(ctx context.Context, hashes map[uint32]uin
 	}
 
 	// 4. Find the best (most voted) offset for each song
-	matches := make([]model.Match, 0)
+	matches := make([]models.Match, 0)
 	for songID, offsetVotes := range votes {
 		bestOffset := int32(0)
 		bestCount := 0
@@ -252,7 +255,7 @@ func (s *acousticService) MatchHashes(ctx context.Context, hashes map[uint32]uin
 		}
 
 		if bestCount > 0 {
-			matches = append(matches, model.Match{
+			matches = append(matches, models.Match{
 				SongID:   songID,
 				OffsetMs: bestOffset,
 				Count:    bestCount,
@@ -263,7 +266,7 @@ func (s *acousticService) MatchHashes(ctx context.Context, hashes map[uint32]uin
 	s.log.Infof("Found %d candidate matches", len(matches))
 
 	// 5. Convert to results with song metadata
-	results := make([]MatchResult, 0, len(matches))
+	results := make([]models.MatchResult, 0, len(matches))
 	for _, match := range matches {
 		song, err := s.GetSongByID(match.SongID)
 		if err != nil {
@@ -280,7 +283,7 @@ func (s *acousticService) MatchHashes(ctx context.Context, hashes map[uint32]uin
 
 		confidence := s.calculateConfidence(match.Count, len(hashes), dbFingerprintCount)
 
-		results = append(results, MatchResult{
+		results = append(results, models.MatchResult{
 			SongID:     match.SongID,
 			Title:      song.Title,
 			Artist:     song.Artist,
@@ -352,17 +355,17 @@ func (s *acousticService) calculateConfidence(matchCount, queryFPCount, dbFPCoun
 }
 
 // GetSongByID retrieves a song's metadata by its database ID.
-func (s *acousticService) GetSongByID(songID uint32) (*Song, error) {
+func (s *acousticService) GetSongByID(songID string) (*models.Song, error) {
 	return s.storage.GetSongByID(songID)
 }
 
 // ListSongs returns all songs in the database.
-func (s *acousticService) ListSongs() ([]Song, error) {
+func (s *acousticService) ListSongs() ([]models.Song, error) {
 	return s.storage.ListSongs()
 }
 
 // DeleteSong removes a song and all its fingerprints from the database.
-func (s *acousticService) DeleteSong(songID uint32) error {
+func (s *acousticService) DeleteSong(songID string) error {
 	return s.storage.DeleteSongByID(songID)
 }
 

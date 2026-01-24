@@ -1,4 +1,4 @@
-package reference_scripts
+package main
 
 import (
 	"fmt"

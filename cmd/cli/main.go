@@ -1,3 +1,6 @@
+//go:build !js && !wasm
+// +build !js,!wasm
+
 package main
 
 import (
@@ -5,7 +8,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -232,13 +234,13 @@ func handleAdd() {
 	}
 
 	fmt.Println("\n✅ Successfully added song to database!")
-	fmt.Printf("   ID:      %d\n", songID)
+	fmt.Printf("   ID:      %s\n", songID)
 	fmt.Printf("   Title:   %s\n", *title)
 	fmt.Printf("   Artist:  %s\n", *artist)
 	if *youtube != "" {
 		fmt.Printf("   YouTube: %s\n", *youtube)
 	}
-	log.Infof("Successfully added song ID=%d", songID)
+	log.Infof("Successfully added song ID=%s", songID)
 }
 
 func handleMatch() {
@@ -333,7 +335,7 @@ func handleList() {
 
 	fmt.Printf("\n📚 Found %d song(s):\n\n", len(songs))
 	for i, song := range songs {
-		fmt.Printf("%d. \"%s\" by %s (ID: %d)\n", i+1, song.Title, song.Artist, song.ID)
+		fmt.Printf("%d. \"%s\" by %s (ID: %s)\n", i+1, song.Title, song.Artist, song.ID)
 		if song.YouTubeID != "" {
 			fmt.Printf("   YouTube: https://youtube.com/watch?v=%s\n", song.YouTubeID)
 		}
@@ -354,12 +356,7 @@ func handleDelete() {
 		os.Exit(1)
 	}
 
-	songID, err := strconv.ParseUint(os.Args[2], 10, 32)
-	if err != nil {
-		fmt.Printf("❌ Invalid song ID: %v\n", err)
-		log.Errorf("Invalid song ID: %v", err)
-		os.Exit(1)
-	}
+	songID := os.Args[2]
 
 	svc, err := createService()
 	if err != nil {
@@ -370,25 +367,25 @@ func handleDelete() {
 	defer svc.Close()
 
 	// Get song info before deletion
-	song, err := svc.GetSongByID(uint32(songID))
+	song, err := svc.GetSongByID(songID)
 	if err != nil {
-		fmt.Printf("❌ Song not found (ID: %d)\n", songID)
-		log.Warnf("Song %d not found: %v", songID, err)
+		fmt.Printf("❌ Song not found (ID: %s)\n", songID)
+		log.Warnf("Song %s not found: %v", songID, err)
 		os.Exit(1)
 	}
 
 	// Delete
-	if err := svc.DeleteSong(uint32(songID)); err != nil {
+	if err := svc.DeleteSong(songID); err != nil {
 		fmt.Printf("❌ Failed to delete song: %v\n", err)
 		log.Errorf("DeleteSong failed: %v", err)
 		os.Exit(1)
 	}
 
 	fmt.Printf("\n✅ Successfully deleted song:\n")
-	fmt.Printf("   ID:     %d\n", song.ID)
+	fmt.Printf("   ID:     %s\n", song.ID)
 	fmt.Printf("   Title:  %s\n", song.Title)
 	fmt.Printf("   Artist: %s\n", song.Artist)
-	log.Infof("Deleted song ID=%d ('%s' by '%s')", song.ID, song.Title, song.Artist)
+	log.Infof("Deleted song ID=%s ('%s' by '%s')", song.ID, song.Title, song.Artist)
 }
 
 func printUsage() {
