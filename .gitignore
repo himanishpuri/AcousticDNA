@@ -3,5 +3,3 @@ scripts/
 wasm/
 web/
 .env
-.env.example
-Makefile

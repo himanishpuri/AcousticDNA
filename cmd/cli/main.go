@@ -9,9 +9,41 @@ import (
 	"strings"
 	"time"
 
-	"github.com/himanishpuri/AcousticDNA/internal/service"
+	"github.com/himanishpuri/AcousticDNA/pkg/acousticdna"
+	"github.com/himanishpuri/AcousticDNA/pkg/acousticdna/audio"
 	"github.com/himanishpuri/AcousticDNA/pkg/logger"
+	"github.com/himanishpuri/AcousticDNA/pkg/utils"
 )
+
+// Global flags
+var (
+	dbPath     string
+	tempDir    string
+	sampleRate int
+)
+
+func init() {
+	// Global flags that can be used with any command
+	flag.StringVar(&dbPath, "db", getEnvOrDefault("ACOUSTIC_DB_PATH", "acousticdna.sqlite3"), "Path to the SQLite database file")
+	flag.StringVar(&tempDir, "temp", getEnvOrDefault("ACOUSTIC_TEMP_DIR", "/tmp"), "Directory for temporary audio conversion files")
+	flag.IntVar(&sampleRate, "rate", 11025, "Audio sample rate for processing")
+}
+
+func getEnvOrDefault(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
+
+// createService creates a new AcousticDNA service with configured options
+func createService() (acousticdna.Service, error) {
+	return acousticdna.NewService(
+		acousticdna.WithDBPath(dbPath),
+		acousticdna.WithTempDir(tempDir),
+		acousticdna.WithSampleRate(sampleRate),
+	)
+}
 
 func main() {
 	// Initialize logger
@@ -77,35 +109,113 @@ func handleAdd() {
 
 	// Parse flags
 	addCmd := flag.NewFlagSet("add", flag.ExitOnError)
-	title := addCmd.String("title", "", "Song title (required)")
-	artist := addCmd.String("artist", "", "Artist name (required)")
+	title := addCmd.String("title", "", "Song title (required unless using --youtube-url)")
+	artist := addCmd.String("artist", "", "Artist name (required unless using --youtube-url)")
 	youtube := addCmd.String("youtube", "", "YouTube ID (optional)")
+	youtubeURL := addCmd.String("youtube-url", "", "YouTube URL to download and add (alternative to audio file)")
 
 	addCmd.Parse(flagArgs)
 
-	if audioPath == "" {
-		fmt.Println("Error: audio file path required")
+	// Determine if we're using YouTube URL or local file
+	var isYouTubeMode bool
+	if *youtubeURL != "" {
+		isYouTubeMode = true
+		if audioPath != "" {
+			fmt.Println("Error: cannot specify both audio file and --youtube-url")
+			log.Error("Both audio file and --youtube-url specified")
+			os.Exit(1)
+		}
+	} else if audioPath == "" {
+		fmt.Println("Error: audio file path or --youtube-url required")
 		fmt.Println("Usage: acousticDNA add <audio_file> --title <title> --artist <artist> [--youtube <id>]")
+		fmt.Println("   OR: acousticDNA add --youtube-url <url> [--title <title>] [--artist <artist>]")
 		os.Exit(1)
 	}
 
-	if *title == "" || *artist == "" {
-		fmt.Println("Error: --title and --artist are required")
-		log.Warn("Missing required arguments: title and artist")
-		os.Exit(1)
+	// Declare service and error variables for use throughout function
+	var svc acousticdna.Service
+	var err error
+
+	// Handle YouTube download mode
+	if isYouTubeMode {
+		log.Infof("YouTube mode: downloading from URL: %s", *youtubeURL)
+
+		fmt.Println("\n🔧 Initializing service...")
+		svc, err = createService()
+		if err != nil {
+			fmt.Printf("❌ Failed to create service: %v\n", err)
+			log.Errorf("Service initialization failed: %v", err)
+			os.Exit(1)
+		}
+		defer svc.Close()
+
+		fmt.Println("📥 Downloading audio from YouTube...")
+		fmt.Println("   This may take a few moments depending on video length")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+
+		// Download YouTube audio (service will convert to WAV)
+		downloadedPath, ytMeta, err := audio.DownloadYouTubeAudio(ctx, *youtubeURL, tempDir, sampleRate)
+		if err != nil {
+			fmt.Printf("\n❌ Failed to download YouTube video: %v\n", err)
+			log.Errorf("YouTube download failed: %v", err)
+			os.Exit(1)
+		}
+
+		// Use metadata from YouTube if not provided by user
+		if *title == "" {
+			*title = ytMeta.Title
+			log.Infof("Using YouTube title: %s", *title)
+		}
+		if *artist == "" {
+			*artist = ytMeta.Artist
+			log.Infof("Using YouTube artist: %s", *artist)
+		}
+
+		// Extract YouTube ID from URL
+		if *youtube == "" {
+			ytID, err := utils.ExtractYouTubeID(*youtubeURL)
+			if err != nil {
+				log.Warnf("Failed to extract YouTube ID: %v", err)
+			} else {
+				*youtube = ytID
+				log.Infof("Extracted YouTube ID: %s", ytID)
+			}
+		}
+
+		// Validate we have title and artist
+		if *title == "" || *artist == "" {
+			fmt.Println("Error: Could not determine title or artist from YouTube metadata")
+			fmt.Println("Please provide --title and --artist explicitly")
+			log.Error("Missing title or artist after YouTube download")
+			os.Exit(1)
+		}
+
+		audioPath = downloadedPath
+		fmt.Printf("✅ Downloaded: %s by %s\n", *title, *artist)
+	} else {
+		// Local file mode - validate required fields
+		if *title == "" || *artist == "" {
+			fmt.Println("Error: --title and --artist are required")
+			log.Warn("Missing required arguments: title and artist")
+			os.Exit(1)
+		}
 	}
 
 	log.Infof("Adding song: '%s' by '%s' from file: %s", *title, *artist, audioPath)
 
-	// Create service
-	fmt.Println("\n🔧 Initializing service...")
-	svc, err := service.NewAcousticService()
-	if err != nil {
-		fmt.Printf("❌ Failed to create service: %v\n", err)
-		log.Errorf("Service initialization failed: %v", err)
-		os.Exit(1)
+	// Create service for local file mode (YouTube mode already created it)
+	if !isYouTubeMode {
+		fmt.Println("\n🔧 Initializing service...")
+		svc, err = createService()
+		if err != nil {
+			fmt.Printf("❌ Failed to create service: %v\n", err)
+			log.Errorf("Service initialization failed: %v", err)
+			os.Exit(1)
+		}
+		defer svc.Close()
 	}
-	defer svc.Close()
 
 	// Add song
 	fmt.Println("🎵 Processing audio file...")
@@ -143,7 +253,7 @@ func handleMatch() {
 	log.Infof("Matching audio file: %s", audioPath)
 
 	fmt.Println("\n🔧 Initializing service...")
-	svc, err := service.NewAcousticService()
+	svc, err := createService()
 	if err != nil {
 		fmt.Printf("❌ Failed to create service: %v\n", err)
 		log.Errorf("Service initialization failed: %v", err)
@@ -200,7 +310,7 @@ func handleMatch() {
 func handleList() {
 	log := logger.GetLogger()
 
-	svc, err := service.NewAcousticService()
+	svc, err := createService()
 	if err != nil {
 		fmt.Printf("❌ Failed to create service: %v\n", err)
 		log.Errorf("Service initialization failed: %v", err)
@@ -251,7 +361,7 @@ func handleDelete() {
 		os.Exit(1)
 	}
 
-	svc, err := service.NewAcousticService()
+	svc, err := createService()
 	if err != nil {
 		fmt.Printf("❌ Failed to create service: %v\n", err)
 		log.Errorf("Service initialization failed: %v", err)
@@ -283,9 +393,26 @@ func handleDelete() {
 
 func printUsage() {
 	fmt.Println("AcousticDNA - Audio Fingerprinting CLI")
+	fmt.Println("\nGlobal Options:")
+	fmt.Println("  --db <path>        Path to SQLite database (env: ACOUSTIC_DB_PATH, default: acousticdna.sqlite3)")
+	fmt.Println("  --temp <dir>       Temporary directory for audio conversion (env: ACOUSTIC_TEMP_DIR, default: /tmp)")
+	fmt.Println("  --rate <hz>        Audio sample rate (default: 11025)")
 	fmt.Println("\nUsage:")
-	fmt.Println("  acousticDNA add <audio_file> --title <title> --artist <artist> [--youtube <id>]")
-	fmt.Println("  acousticDNA match <audio_file>")
-	fmt.Println("  acousticDNA list")
-	fmt.Println("  acousticDNA delete <song_id>")
+	fmt.Println("  acousticDNA [global-options] add <audio_file> --title <title> --artist <artist> [--youtube <id>]")
+	fmt.Println("  acousticDNA [global-options] add --youtube-url <url> [--title <title>] [--artist <artist>]")
+	fmt.Println("  acousticDNA [global-options] match <audio_file>")
+	fmt.Println("  acousticDNA [global-options] list")
+	fmt.Println("  acousticDNA [global-options] delete <song_id>")
+	fmt.Println("\nExamples:")
+	fmt.Println("  # Add from local file")
+	fmt.Println("  acousticDNA --db mydb.sqlite3 add song.mp3 --title \"Song\" --artist \"Artist\"")
+	fmt.Println()
+	fmt.Println("  # Add from YouTube URL (auto-detects metadata)")
+	fmt.Println("  acousticDNA add --youtube-url \"https://youtube.com/watch?v=dQw4w9WgXcQ\"")
+	fmt.Println()
+	fmt.Println("  # Add from YouTube URL with custom metadata")
+	fmt.Println("  acousticDNA add --youtube-url \"https://youtu.be/dQw4w9WgXcQ\" --title \"Custom Title\" --artist \"Custom Artist\"")
+	fmt.Println()
+	fmt.Println("  # Match audio file")
+	fmt.Println("  acousticDNA --rate 22050 match query.mp3")
 }

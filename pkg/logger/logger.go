@@ -11,21 +11,15 @@ import (
 	"time"
 )
 
-// LogLevel represents the severity level of a log message
 type LogLevel int
 
 const (
-	// DEBUG level for detailed diagnostic information
 	DEBUG LogLevel = iota
-	// INFO level for general informational messages
 	INFO
-	// WARN level for warning messages
 	WARN
-	// FATAL level for critical errors that require program termination
 	FATAL
 )
 
-// String returns the string representation of a log level
 func (l LogLevel) String() string {
 	switch l {
 	case DEBUG:
@@ -41,7 +35,6 @@ func (l LogLevel) String() string {
 	}
 }
 
-// Color codes for terminal output
 const (
 	colorReset  = "\033[0m"
 	colorRed    = "\033[31m"
@@ -50,7 +43,6 @@ const (
 	colorGray   = "\033[90m"
 )
 
-// Logger is a structured logger with multiple severity levels
 type Logger struct {
 	mu         sync.Mutex
 	out        io.Writer
@@ -68,7 +60,6 @@ var (
 	once          sync.Once
 )
 
-// Config holds configuration options for the logger
 type Config struct {
 	Level      LogLevel
 	Prefix     string
@@ -79,7 +70,6 @@ type Config struct {
 	Output     io.Writer
 }
 
-// DefaultConfig returns a sensible default configuration
 func DefaultConfig() Config {
 	return Config{
 		Level:      INFO,
@@ -92,7 +82,6 @@ func DefaultConfig() Config {
 	}
 }
 
-// New creates a new Logger instance with the given configuration
 func New(cfg Config) *Logger {
 	if cfg.Output == nil {
 		cfg.Output = os.Stdout
@@ -113,11 +102,9 @@ func New(cfg Config) *Logger {
 	}
 }
 
-// GetLogger returns the global default logger instance (singleton)
 func GetLogger() *Logger {
 	once.Do(func() {
 		cfg := DefaultConfig()
-		// Check environment variable for log level
 		if envLevel := os.Getenv("LOG_LEVEL"); envLevel != "" {
 			switch strings.ToUpper(envLevel) {
 			case "DEBUG":
@@ -135,14 +122,12 @@ func GetLogger() *Logger {
 	return defaultLogger
 }
 
-// SetLevel sets the minimum log level for this logger
 func (l *Logger) SetLevel(level LogLevel) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.level = level
 }
 
-// SetOutput sets the output destination for this logger
 func (l *Logger) SetOutput(w io.Writer) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -150,31 +135,26 @@ func (l *Logger) SetOutput(w io.Writer) {
 	l.stdLogger.SetOutput(w)
 }
 
-// SetColorize enables or disables colored output
 func (l *Logger) SetColorize(colorize bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.colorize = colorize
 }
 
-// SetShowCaller enables or disables caller information
 func (l *Logger) SetShowCaller(show bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.showCaller = show
 }
 
-// formatMessage builds the complete log message with metadata
 func (l *Logger) formatMessage(level LogLevel, msg string, args ...any) string {
 	var parts []string
 
-	// Add timestamp
 	if l.showTime {
 		timestamp := time.Now().Format(l.timeFormat)
 		parts = append(parts, timestamp)
 	}
 
-	// Add level with color if enabled
 	levelStr := fmt.Sprintf("[%s]", level.String())
 	if l.colorize {
 		switch level {
@@ -190,7 +170,6 @@ func (l *Logger) formatMessage(level LogLevel, msg string, args ...any) string {
 	}
 	parts = append(parts, levelStr)
 
-	// Add caller information if enabled
 	if l.showCaller {
 		if _, file, line, ok := runtime.Caller(3); ok {
 			// Get just the filename, not the full path
@@ -203,12 +182,10 @@ func (l *Logger) formatMessage(level LogLevel, msg string, args ...any) string {
 		}
 	}
 
-	// Add prefix if set
 	if l.prefix != "" {
 		parts = append(parts, l.prefix)
 	}
 
-	// Format the message
 	var message string
 	if len(args) > 0 {
 		message = fmt.Sprintf(msg, args...)
@@ -225,7 +202,6 @@ func (l *Logger) log(level LogLevel, msg string, args ...any) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	// Check if we should log this level
 	if level < l.level {
 		return
 	}
@@ -233,7 +209,6 @@ func (l *Logger) log(level LogLevel, msg string, args ...any) {
 	formattedMsg := l.formatMessage(level, msg, args...)
 	fmt.Fprintln(l.out, formattedMsg)
 
-	// Fatal logs should terminate the program
 	if level == FATAL {
 		os.Exit(1)
 	}
