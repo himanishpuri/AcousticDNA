@@ -1,0 +1,1481 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta
+			name="viewport"
+			content="width=device-width, initial-scale=1.0"
+		/>
+		<title>AcousticDNA - WASM Audio Fingerprinting</title>
+		<style>
+			* {
+				margin: 0;
+				padding: 0;
+				box-sizing: border-box;
+			}
+
+			body {
+				font-family:
+					-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
+					Ubuntu, Cantarell, sans-serif;
+				background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+				min-height: 100vh;
+				padding: 20px;
+				color: #333;
+			}
+
+			.container {
+				max-width: 800px;
+				margin: 0 auto;
+				background: white;
+				border-radius: 20px;
+				box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+				overflow: hidden;
+			}
+
+			header {
+				background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+				color: white;
+				padding: 40px;
+				text-align: center;
+			}
+
+			h1 {
+				font-size: 2.5em;
+				margin-bottom: 10px;
+				font-weight: 700;
+			}
+
+			.subtitle {
+				font-size: 1.1em;
+				opacity: 0.9;
+			}
+
+			main {
+				padding: 40px;
+			}
+
+			.status-section {
+				background: #f8f9fa;
+				border-radius: 12px;
+				padding: 20px;
+				margin-bottom: 30px;
+				border-left: 4px solid #667eea;
+			}
+
+			.status {
+				font-size: 1.1em;
+				font-weight: 600;
+				color: #667eea;
+				display: flex;
+				align-items: center;
+				gap: 10px;
+			}
+
+			.status.loading::before {
+				content: "⏳";
+			}
+
+			.status.ready::before {
+				content: "✅";
+			}
+
+			.status.error::before {
+				content: "❌";
+			}
+
+			.upload-section {
+				background: white;
+				border: 2px dashed #ddd;
+				border-radius: 12px;
+				padding: 40px;
+				text-align: center;
+				margin-bottom: 30px;
+				transition: all 0.3s;
+				cursor: pointer;
+			}
+
+			.upload-section:hover {
+				border-color: #667eea;
+				background: #f8f9fa;
+			}
+
+			.upload-section.disabled {
+				opacity: 0.5;
+				cursor: not-allowed;
+				pointer-events: none;
+			}
+
+			#audioFile {
+				display: none;
+			}
+
+			.upload-label {
+				font-size: 1.2em;
+				color: #667eea;
+				font-weight: 600;
+				margin-bottom: 10px;
+				display: block;
+			}
+
+			.upload-hint {
+				color: #666;
+				font-size: 0.9em;
+			}
+
+			.selected-file {
+				margin-top: 15px;
+				padding: 10px;
+				background: #e8eaf6;
+				border-radius: 8px;
+				color: #667eea;
+				font-weight: 500;
+			}
+
+			.button-group {
+				display: flex;
+				gap: 15px;
+				margin-bottom: 30px;
+			}
+
+			button {
+				flex: 1;
+				padding: 15px 30px;
+				font-size: 1.1em;
+				font-weight: 600;
+				border: none;
+				border-radius: 10px;
+				cursor: pointer;
+				transition: all 0.3s;
+				text-transform: uppercase;
+				letter-spacing: 0.5px;
+			}
+
+			button:disabled {
+				opacity: 0.5;
+				cursor: not-allowed;
+			}
+
+			#processBtn {
+				background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+				color: white;
+			}
+
+			#processBtn:not(:disabled):hover {
+				transform: translateY(-2px);
+				box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+			}
+
+			#matchBtn {
+				background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+				color: white;
+			}
+
+			#matchBtn:not(:disabled):hover {
+				transform: translateY(-2px);
+				box-shadow: 0 5px 15px rgba(245, 87, 108, 0.4);
+			}
+
+			.progress-section {
+				display: none;
+				margin-bottom: 30px;
+			}
+
+			.progress-section.active {
+				display: block;
+			}
+
+			.progress-bar-container {
+				background: #e0e0e0;
+				border-radius: 10px;
+				height: 30px;
+				overflow: hidden;
+				margin-bottom: 10px;
+			}
+
+			.progress-bar {
+				background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+				height: 100%;
+				width: 0%;
+				transition: width 0.3s ease;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				color: white;
+				font-weight: 600;
+			}
+
+			.progress-text {
+				color: #666;
+				font-size: 0.9em;
+				text-align: center;
+			}
+
+			.results-section {
+				display: none;
+				background: #f8f9fa;
+				border-radius: 12px;
+				padding: 20px;
+				margin-bottom: 20px;
+			}
+
+			.results-section.active {
+				display: block;
+			}
+
+			.results-title {
+				font-size: 1.3em;
+				font-weight: 700;
+				margin-bottom: 15px;
+				color: #333;
+			}
+
+			.result-card {
+				background: white;
+				border-radius: 10px;
+				padding: 20px;
+				margin-bottom: 15px;
+				border-left: 4px solid #667eea;
+				box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+			}
+
+			.result-title {
+				font-size: 1.2em;
+				font-weight: 600;
+				color: #333;
+				margin-bottom: 5px;
+			}
+
+			.result-artist {
+				color: #666;
+				margin-bottom: 10px;
+			}
+
+			.result-stats {
+				display: flex;
+				gap: 20px;
+				flex-wrap: wrap;
+				font-size: 0.9em;
+			}
+
+			.result-stat {
+				display: flex;
+				flex-direction: column;
+			}
+
+			.result-stat-label {
+				color: #999;
+				font-size: 0.85em;
+				text-transform: uppercase;
+				letter-spacing: 0.5px;
+			}
+
+			.result-stat-value {
+				color: #667eea;
+				font-weight: 600;
+				font-size: 1.1em;
+			}
+
+			.confidence-bar {
+				height: 8px;
+				background: #e0e0e0;
+				border-radius: 4px;
+				overflow: hidden;
+				margin-top: 10px;
+			}
+
+			.confidence-fill {
+				height: 100%;
+				background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+				transition: width 0.5s ease;
+			}
+
+			.no-results {
+				text-align: center;
+				padding: 40px;
+				color: #999;
+			}
+
+			.stats-grid {
+				display: grid;
+				grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+				gap: 15px;
+				background: white;
+				padding: 20px;
+				border-radius: 10px;
+			}
+
+			.stat-item {
+				text-align: center;
+			}
+
+			.stat-value {
+				font-size: 2em;
+				font-weight: 700;
+				color: #667eea;
+			}
+
+			.stat-label {
+				color: #999;
+				font-size: 0.9em;
+				margin-top: 5px;
+			}
+
+			.error-message {
+				background: #fee;
+				border-left: 4px solid #f44336;
+				padding: 15px;
+				border-radius: 8px;
+				color: #c62828;
+				margin: 15px 0;
+				display: none;
+			}
+
+			.error-message.active {
+				display: block;
+			}
+
+			/* Recording Section */
+			.recording-section {
+				margin: 30px 0;
+				text-align: center;
+			}
+
+			.divider {
+				display: flex;
+				align-items: center;
+				text-align: center;
+				margin: 20px 0;
+				color: #999;
+				font-weight: 600;
+			}
+
+			.divider::before,
+			.divider::after {
+				content: "";
+				flex: 1;
+				border-bottom: 2px solid #e0e0e0;
+			}
+
+			.divider span {
+				padding: 0 15px;
+			}
+
+			.record-button {
+				width: 100%;
+				padding: 20px;
+				font-size: 1.2em;
+				font-weight: 600;
+				border: none;
+				border-radius: 12px;
+				cursor: pointer;
+				transition: all 0.3s;
+				background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+				color: white;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				gap: 12px;
+			}
+
+			.record-button:not(:disabled):hover {
+				transform: translateY(-2px);
+				box-shadow: 0 5px 15px rgba(17, 153, 142, 0.4);
+			}
+
+			.record-button:disabled {
+				opacity: 0.5;
+				cursor: not-allowed;
+			}
+
+			.record-button.recording {
+				background: linear-gradient(135deg, #eb3349 0%, #f45c43 100%);
+				animation: pulse 1.5s infinite;
+			}
+
+			@keyframes pulse {
+				0%,
+				100% {
+					box-shadow: 0 0 0 0 rgba(235, 51, 73, 0.7);
+				}
+				50% {
+					box-shadow: 0 0 0 15px rgba(235, 51, 73, 0);
+				}
+			}
+
+			.record-icon {
+				font-size: 1.5em;
+			}
+
+			.record-duration {
+				font-size: 0.9em;
+				opacity: 0.9;
+				background: rgba(255, 255, 255, 0.2);
+				padding: 4px 12px;
+				border-radius: 20px;
+			}
+
+			.record-hint {
+				color: #666;
+				font-size: 0.9em;
+				margin-top: 10px;
+			}
+
+			/* Add Song Section */
+			.add-song-section {
+				background: #f8f9fa;
+				border-radius: 12px;
+				padding: 30px;
+				margin-top: 30px;
+				border-top: 3px solid #667eea;
+			}
+
+			.section-title {
+				font-size: 1.5em;
+				font-weight: 700;
+				margin-bottom: 20px;
+				color: #333;
+			}
+
+			.tab-buttons {
+				display: flex;
+				gap: 10px;
+				margin-bottom: 20px;
+			}
+
+			.tab-button {
+				flex: 1;
+				padding: 12px 20px;
+				border: 2px solid #ddd;
+				background: white;
+				border-radius: 8px;
+				font-size: 1em;
+				font-weight: 600;
+				cursor: pointer;
+				transition: all 0.3s;
+			}
+
+			.tab-button:hover {
+				border-color: #667eea;
+			}
+
+			.tab-button.active {
+				background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+				color: white;
+				border-color: #667eea;
+			}
+
+			.tab-content {
+				display: none;
+			}
+
+			.tab-content.active {
+				display: block;
+			}
+
+			.form-group {
+				margin-bottom: 20px;
+			}
+
+			.form-group label {
+				display: block;
+				font-weight: 600;
+				margin-bottom: 8px;
+				color: #333;
+			}
+
+			.form-group input[type="text"],
+			.form-group input[type="url"] {
+				width: 100%;
+				padding: 12px;
+				border: 2px solid #ddd;
+				border-radius: 8px;
+				font-size: 1em;
+				transition: border-color 0.3s;
+			}
+
+			.form-group input[type="text"]:focus,
+			.form-group input[type="url"]:focus {
+				outline: none;
+				border-color: #667eea;
+			}
+
+			.form-group input[type="file"] {
+				width: 100%;
+				padding: 10px;
+				border: 2px dashed #ddd;
+				border-radius: 8px;
+				cursor: pointer;
+				transition: border-color 0.3s;
+			}
+
+			.form-group input[type="file"]:hover {
+				border-color: #667eea;
+			}
+
+			.form-hint {
+				font-size: 0.85em;
+				color: #666;
+				margin-top: 5px;
+			}
+
+			.submit-button {
+				width: 100%;
+				padding: 15px;
+				background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+				color: white;
+				border: none;
+				border-radius: 10px;
+				font-size: 1.1em;
+				font-weight: 600;
+				cursor: pointer;
+				transition: all 0.3s;
+				margin-top: 10px;
+			}
+
+			.submit-button:hover {
+				transform: translateY(-2px);
+				box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+			}
+
+			.submit-button:disabled {
+				opacity: 0.5;
+				cursor: not-allowed;
+				transform: none;
+			}
+
+			.result-message {
+				display: none;
+				padding: 15px;
+				border-radius: 8px;
+				margin-top: 15px;
+				font-weight: 600;
+			}
+
+			.result-message.success {
+				display: block;
+				background: #d4edda;
+				color: #155724;
+				border: 1px solid #c3e6cb;
+			}
+
+			.result-message.error {
+				display: block;
+				background: #f8d7da;
+				color: #721c24;
+				border: 1px solid #f5c6cb;
+			}
+
+			footer {
+				text-align: center;
+				padding: 20px;
+				color: #999;
+				font-size: 0.9em;
+			}
+
+			@media (max-width: 600px) {
+				.button-group {
+					flex-direction: column;
+				}
+
+				.stats-grid {
+					grid-template-columns: 1fr;
+				}
+			}
+		</style>
+	</head>
+	<body>
+		<div class="container">
+			<header>
+				<h1>🎵 AcousticDNA</h1>
+				<p class="subtitle">
+					Privacy-Preserving Audio Fingerprinting with WebAssembly
+				</p>
+			</header>
+
+			<main>
+				<!-- Status Section -->
+				<div class="status-section">
+					<div
+						id="status"
+						class="status loading"
+					>
+						Initializing WASM module...
+					</div>
+				</div>
+
+				<!-- Upload Section -->
+				<div
+					class="upload-section disabled"
+					id="uploadSection"
+				>
+					<input
+						type="file"
+						id="audioFile"
+						accept="audio/*"
+					/>
+					<label
+						for="audioFile"
+						class="upload-label"
+					>
+						📁 Click to select audio file
+					</label>
+					<p class="upload-hint">
+						Supported formats: MP3, WAV, OGG, M4A, FLAC
+					</p>
+					<div
+						id="selectedFile"
+						class="selected-file"
+						style="display: none"
+					></div>
+				</div>
+
+				<!-- Recording Section -->
+				<div class="recording-section">
+					<div class="divider">
+						<span>OR</span>
+					</div>
+					<button
+						id="recordBtn"
+						class="record-button"
+						disabled
+					>
+						<span class="record-icon">🎤</span>
+						<span class="record-text">Record Audio</span>
+						<span
+							class="record-duration"
+							style="display: none"
+							>0s</span
+						>
+					</button>
+					<p class="record-hint">
+						Record 5-15 seconds of audio to identify
+					</p>
+				</div>
+
+				<!-- Error Message -->
+				<div
+					id="errorMessage"
+					class="error-message"
+				></div>
+
+				<!-- Buttons -->
+				<div class="button-group">
+					<button
+						id="processBtn"
+						disabled
+					>
+						🔬 Generate Fingerprint
+					</button>
+					<button
+						id="matchBtn"
+						disabled
+					>
+						🔍 Match Song
+					</button>
+				</div>
+
+				<!-- Progress -->
+				<div
+					id="progressSection"
+					class="progress-section"
+				>
+					<div class="progress-bar-container">
+						<div
+							id="progressBar"
+							class="progress-bar"
+						>
+							0%
+						</div>
+					</div>
+					<div
+						id="progressText"
+						class="progress-text"
+					>
+						Initializing...
+					</div>
+				</div>
+
+				<!-- Results -->
+				<div
+					id="resultsSection"
+					class="results-section"
+				>
+					<h2 class="results-title">Fingerprint Statistics</h2>
+					<div
+						id="fingerprintStats"
+						class="stats-grid"
+					></div>
+				</div>
+
+				<!-- Match Results -->
+				<div
+					id="matchSection"
+					class="results-section"
+				>
+					<h2 class="results-title">Match Results</h2>
+					<div id="matchResults"></div>
+				</div>
+
+				<!-- Add Song Section -->
+				<div class="add-song-section">
+					<h2 class="section-title">➕ Add Song to Database</h2>
+
+					<!-- Tab Buttons -->
+					<div class="tab-buttons">
+						<button
+							id="fileTabBtn"
+							class="tab-button active"
+						>
+							📁 Upload File
+						</button>
+						<button
+							id="youtubeTabBtn"
+							class="tab-button"
+						>
+							🎬 YouTube URL
+						</button>
+					</div>
+
+					<!-- File Upload Tab -->
+					<div
+						id="fileTab"
+						class="tab-content active"
+					>
+						<div class="form-group">
+							<label for="songFile">Audio File</label>
+							<input
+								type="file"
+								id="songFile"
+								accept="audio/*,video/*"
+								required
+							/>
+							<p class="form-hint">
+								Supported: MP3, WAV, M4A, MP4, OGG, FLAC, etc.
+							</p>
+						</div>
+						<div class="form-group">
+							<label for="songTitle">Title *</label>
+							<input
+								type="text"
+								id="songTitle"
+								placeholder="Enter song title"
+								required
+							/>
+						</div>
+						<div class="form-group">
+							<label for="songArtist">Artist *</label>
+							<input
+								type="text"
+								id="songArtist"
+								placeholder="Enter artist name"
+								required
+							/>
+						</div>
+						<button
+							id="uploadSongBtn"
+							class="submit-button"
+						>
+							<span>🎵 Add Song from File</span>
+						</button>
+					</div>
+
+					<!-- YouTube Tab -->
+					<div
+						id="youtubeTab"
+						class="tab-content"
+					>
+						<div class="form-group">
+							<label for="youtubeUrl">YouTube URL *</label>
+							<input
+								type="url"
+								id="youtubeUrl"
+								placeholder="https://www.youtube.com/watch?v=..."
+								required
+							/>
+							<p class="form-hint">
+								Metadata will be auto-extracted from YouTube
+							</p>
+						</div>
+						<div class="form-group">
+							<label for="youtubeTitleOverride">Title (Optional)</label>
+							<input
+								type="text"
+								id="youtubeTitleOverride"
+								placeholder="Leave empty to use YouTube title"
+							/>
+						</div>
+						<div class="form-group">
+							<label for="youtubeArtistOverride"
+								>Artist (Optional)</label
+							>
+							<input
+								type="text"
+								id="youtubeArtistOverride"
+								placeholder="Leave empty to use YouTube uploader"
+							/>
+						</div>
+						<button
+							id="addYoutubeBtn"
+							class="submit-button"
+						>
+							<span>🎬 Add Song from YouTube</span>
+						</button>
+					</div>
+
+					<!-- Add Song Progress -->
+					<div
+						id="addSongProgress"
+						class="progress-section"
+					>
+						<div class="progress-bar-container">
+							<div
+								id="addSongProgressBar"
+								class="progress-bar"
+							>
+								0%
+							</div>
+						</div>
+						<div
+							id="addSongProgressText"
+							class="progress-text"
+						>
+							Processing...
+						</div>
+					</div>
+
+					<!-- Add Song Result -->
+					<div
+						id="addSongResult"
+						class="result-message"
+					></div>
+				</div>
+			</main>
+
+			<footer>
+				<p>AcousticDNA WASM Demo • Your audio never leaves your device</p>
+			</footer>
+		</div>
+
+		<script src="wasm_exec.js"></script>
+		<script type="module">
+			import { wasmLoader } from "./wasm.js";
+			let currentHashes = null;
+			let currentFile = null;
+
+			// UI Elements
+			const statusEl = document.getElementById("status");
+			const uploadSectionEl = document.getElementById("uploadSection");
+			const audioFileEl = document.getElementById("audioFile");
+			const selectedFileEl = document.getElementById("selectedFile");
+			const recordBtn = document.getElementById("recordBtn");
+			const recordIcon = document.querySelector(".record-icon");
+			const recordText = document.querySelector(".record-text");
+			const recordDuration = document.querySelector(".record-duration");
+			const processBtn = document.getElementById("processBtn");
+			const matchBtn = document.getElementById("matchBtn");
+			const progressSection = document.getElementById("progressSection");
+			const progressBar = document.getElementById("progressBar");
+			const progressText = document.getElementById("progressText");
+			const resultsSection = document.getElementById("resultsSection");
+			const fingerprintStats = document.getElementById("fingerprintStats");
+			const matchSection = document.getElementById("matchSection");
+			const matchResults = document.getElementById("matchResults");
+			const errorMessage = document.getElementById("errorMessage");
+
+			// Recording state
+			let mediaRecorder = null;
+			let audioChunks = [];
+			let recordingStartTime = 0;
+			let recordingTimer = null;
+			let audioStream = null;
+
+			// Server URL (change this to match your server)
+			const SERVER_URL = "http://localhost:8080";
+
+			// Initialize WASM
+			async function initWASM() {
+				try {
+					await wasmLoader.init();
+					statusEl.className = "status ready";
+					statusEl.textContent =
+						"WASM module ready - Select an audio file or record";
+					uploadSectionEl.classList.remove("disabled");
+					recordBtn.disabled = false;
+				} catch (error) {
+					statusEl.className = "status error";
+					statusEl.textContent = `WASM initialization failed: ${error.message}`;
+					showError(error.message);
+				}
+			}
+
+			// File selection handler
+			audioFileEl.addEventListener("change", (e) => {
+				const file = e.target.files[0];
+				if (!file) return;
+
+				currentFile = file;
+				selectedFileEl.textContent = `Selected: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`;
+				selectedFileEl.style.display = "block";
+				processBtn.disabled = false;
+				matchBtn.disabled = true;
+				currentHashes = null;
+
+				// Reset results
+				resultsSection.classList.remove("active");
+				matchSection.classList.remove("active");
+				hideError();
+			});
+
+			// Recording button handler
+			recordBtn.addEventListener("click", async () => {
+				if (mediaRecorder && mediaRecorder.state === "recording") {
+					// Stop recording
+					stopRecording();
+				} else {
+					// Start recording
+					await startRecording();
+				}
+			});
+
+			// Start recording
+			async function startRecording() {
+				try {
+					hideError();
+
+					// Request microphone access
+					audioStream = await navigator.mediaDevices.getUserMedia({
+						audio: {
+							echoCancellation: true,
+							noiseSuppression: true,
+							autoGainControl: true,
+						},
+					});
+
+					audioChunks = [];
+					mediaRecorder = new MediaRecorder(audioStream);
+
+					mediaRecorder.ondataavailable = (event) => {
+						if (event.data.size > 0) {
+							audioChunks.push(event.data);
+						}
+					};
+
+					mediaRecorder.onstop = async () => {
+						// Create audio blob from recorded chunks
+						const audioBlob = new Blob(audioChunks, {
+							type: "audio/webm",
+						});
+
+						// Convert to File object
+						const audioFile = new File(
+							[audioBlob],
+							`recording_${Date.now()}.webm`,
+							{
+								type: "audio/webm",
+							},
+						);
+
+						// Process the recorded audio
+						await processRecordedAudio(audioFile);
+
+						// Stop and release microphone
+						if (audioStream) {
+							audioStream.getTracks().forEach((track) => track.stop());
+							audioStream = null;
+						}
+					};
+
+					// Start recording
+					mediaRecorder.start();
+					recordingStartTime = Date.now();
+
+					// Update UI
+					recordBtn.classList.add("recording");
+					recordIcon.textContent = "⏹️";
+					recordText.textContent = "Stop Recording";
+					recordDuration.style.display = "inline-block";
+
+					// Update duration timer
+					recordingTimer = setInterval(() => {
+						const elapsed = Math.floor(
+							(Date.now() - recordingStartTime) / 1000,
+						);
+						recordDuration.textContent = `${elapsed}s`;
+
+						// Auto-stop after 15 seconds
+						if (elapsed >= 15) {
+							stopRecording();
+						}
+					}, 100);
+				} catch (error) {
+					console.error("Recording error:", error);
+					showError(`Failed to access microphone: ${error.message}`);
+				}
+			}
+
+			// Stop recording
+			function stopRecording() {
+				if (mediaRecorder && mediaRecorder.state === "recording") {
+					mediaRecorder.stop();
+					clearInterval(recordingTimer);
+
+					// Update UI
+					recordBtn.classList.remove("recording");
+					recordIcon.textContent = "🎤";
+					recordText.textContent = "Record Audio";
+					recordDuration.style.display = "none";
+				}
+			}
+
+			// Process recorded audio
+			async function processRecordedAudio(audioFile) {
+				try {
+					hideError();
+					processBtn.disabled = true;
+					matchBtn.disabled = true;
+					recordBtn.disabled = true;
+					progressSection.classList.add("active");
+					resultsSection.classList.remove("active");
+					matchSection.classList.remove("active");
+
+					selectedFileEl.textContent = `Recorded: ${(audioFile.size / 1024).toFixed(0)} KB`;
+					selectedFileEl.style.display = "block";
+
+					const startTime = performance.now();
+
+					currentHashes = await wasmLoader.processAudioFile(
+						audioFile,
+						(progress) => {
+							const stages = {
+								reading: "Reading recording...",
+								decoding: "Decoding audio...",
+								extracting: "Extracting samples...",
+								fingerprinting: "Generating fingerprints...",
+								complete: "Complete!",
+							};
+
+							progressBar.style.width = `${progress.progress}%`;
+							progressBar.textContent = `${progress.progress}%`;
+							progressText.textContent =
+								stages[progress.stage] || "Processing...";
+						},
+					);
+
+					const totalTime = (
+						(performance.now() - startTime) /
+						1000
+					).toFixed(1);
+
+					// Display stats
+					displayFingerprintStats(currentHashes, totalTime);
+					resultsSection.classList.add("active");
+
+					// Enable match button
+					matchBtn.disabled = false;
+					recordBtn.disabled = false;
+
+					setTimeout(() => {
+						progressSection.classList.remove("active");
+					}, 500);
+
+					console.log(
+						`✅ Recording processed: ${currentHashes.length} hashes in ${totalTime}s`,
+					);
+				} catch (error) {
+					console.error("Processing error:", error);
+					showError(`Processing failed: ${error.message}`);
+					progressSection.classList.remove("active");
+					processBtn.disabled = false;
+					recordBtn.disabled = false;
+				}
+			}
+
+			// Process button handler
+			processBtn.addEventListener("click", async () => {
+				if (!currentFile) return;
+
+				try {
+					hideError();
+					processBtn.disabled = true;
+					matchBtn.disabled = true;
+					progressSection.classList.add("active");
+					resultsSection.classList.remove("active");
+					matchSection.classList.remove("active");
+
+					const startTime = performance.now();
+
+					currentHashes = await wasmLoader.processAudioFile(
+						currentFile,
+						(progress) => {
+							const stages = {
+								reading: "Reading file...",
+								decoding: "Decoding audio...",
+								extracting: "Extracting samples...",
+								fingerprinting: "Generating fingerprints...",
+								complete: "Complete!",
+							};
+
+							progressBar.style.width = `${progress.progress}%`;
+							progressBar.textContent = `${progress.progress}%`;
+							progressText.textContent =
+								stages[progress.stage] || "Processing...";
+						},
+					);
+
+					const totalTime = (
+						(performance.now() - startTime) /
+						1000
+					).toFixed(1);
+
+					// Display statistics
+					displayFingerprintStats(currentHashes, totalTime);
+
+					progressSection.classList.remove("active");
+					resultsSection.classList.add("active");
+					processBtn.disabled = false;
+					matchBtn.disabled = false;
+				} catch (error) {
+					console.error("Processing error:", error);
+					showError(`Processing failed: ${error.message}`);
+					progressSection.classList.remove("active");
+					processBtn.disabled = false;
+				}
+			});
+
+			// Match button handler
+			matchBtn.addEventListener("click", async () => {
+				if (!currentHashes) return;
+
+				try {
+					hideError();
+					matchBtn.disabled = true;
+					progressSection.classList.add("active");
+					progressBar.style.width = "50%";
+					progressBar.textContent = "50%";
+					progressText.textContent = "Sending hashes to server...";
+
+					const results = await wasmLoader.matchHashes(
+						currentHashes,
+						SERVER_URL,
+					);
+
+					progressBar.style.width = "100%";
+					progressBar.textContent = "100%";
+					progressText.textContent = "Complete!";
+
+					setTimeout(() => {
+						progressSection.classList.remove("active");
+						displayMatchResults(results);
+						matchBtn.disabled = false;
+					}, 500);
+				} catch (error) {
+					console.error("Match error:", error);
+					showError(`Match failed: ${error.message}`);
+					progressSection.classList.remove("active");
+					matchBtn.disabled = false;
+				}
+			});
+
+			// Display fingerprint statistics
+			function displayFingerprintStats(hashes, totalTime) {
+				const uniqueHashes = new Set(hashes.map((h) => h.hash)).size;
+				const avgTime =
+					hashes.length > 0
+						? (hashes[hashes.length - 1].anchorTime / 1000).toFixed(1)
+						: 0;
+
+				fingerprintStats.innerHTML = `
+                <div class="stat-item">
+                    <div class="stat-value">${hashes.length}</div>
+                    <div class="stat-label">Total Hashes</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value">${uniqueHashes}</div>
+                    <div class="stat-label">Unique Hashes</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value">${totalTime}s</div>
+                    <div class="stat-label">Processing Time</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value">${avgTime}s</div>
+                    <div class="stat-label">Audio Duration</div>
+                </div>
+            `;
+			}
+
+			// Display match results
+			function displayMatchResults(results) {
+				matchSection.classList.add("active");
+
+				if (!results.matches || results.matches.length === 0) {
+					matchResults.innerHTML =
+						'<div class="no-results">No matches found in database</div>';
+					return;
+				}
+
+				// Sort matches by confidence (highest first), then by score
+				const sortedMatches = [...results.matches].sort((a, b) => {
+					if (b.confidence !== a.confidence) {
+						return b.confidence - a.confidence;
+					}
+					return b.score - a.score;
+				});
+
+				matchResults.innerHTML = sortedMatches
+					.map(
+						(match, index) => `
+                <div class="result-card">
+                    <div class="result-title">${index + 1}. ${match.title}</div>
+                    <div class="result-artist">by ${match.artist}</div>
+                    <div class="result-stats">
+                        <div class="result-stat">
+                            <span class="result-stat-label">Confidence</span>
+                            <span class="result-stat-value">${match.confidence.toFixed(1)}%</span>
+                        </div>
+                        <div class="result-stat">
+                            <span class="result-stat-label">Score</span>
+                            <span class="result-stat-value">${match.score}</span>
+                        </div>
+                        <div class="result-stat">
+                            <span class="result-stat-label">Offset</span>
+                            <span class="result-stat-value">${(match.offset_ms / 1000).toFixed(1)}s</span>
+                        </div>
+                        ${
+									match.youtube_id
+										? `
+                        <div class="result-stat">
+                            <span class="result-stat-label">YouTube</span>
+                            <span class="result-stat-value">
+                                <a href="https://youtube.com/watch?v=${match.youtube_id}" target="_blank" style="color: #667eea;">▶️ Watch</a>
+                            </span>
+                        </div>
+                        `
+										: ""
+								}
+                    </div>
+                    <div class="confidence-bar">
+                        <div class="confidence-fill" style="width: ${match.confidence}%"></div>
+                    </div>
+                </div>
+            `,
+					)
+					.join("");
+			}
+
+			// Error handling
+			function showError(message) {
+				errorMessage.textContent = `❌ Error: ${message}`;
+				errorMessage.classList.add("active");
+			}
+
+			function hideError() {
+				errorMessage.classList.remove("active");
+			}
+
+			// Add Song UI Elements
+			const fileTabBtn = document.getElementById("fileTabBtn");
+			const youtubeTabBtn = document.getElementById("youtubeTabBtn");
+			const fileTab = document.getElementById("fileTab");
+			const youtubeTab = document.getElementById("youtubeTab");
+			const songFile = document.getElementById("songFile");
+			const songTitle = document.getElementById("songTitle");
+			const songArtist = document.getElementById("songArtist");
+			const uploadSongBtn = document.getElementById("uploadSongBtn");
+			const youtubeUrl = document.getElementById("youtubeUrl");
+			const youtubeTitleOverride = document.getElementById(
+				"youtubeTitleOverride",
+			);
+			const youtubeArtistOverride = document.getElementById(
+				"youtubeArtistOverride",
+			);
+			const addYoutubeBtn = document.getElementById("addYoutubeBtn");
+			const addSongProgress = document.getElementById("addSongProgress");
+			const addSongProgressBar =
+				document.getElementById("addSongProgressBar");
+			const addSongProgressText = document.getElementById(
+				"addSongProgressText",
+			);
+			const addSongResult = document.getElementById("addSongResult");
+
+			// Tab switching
+			fileTabBtn.addEventListener("click", () => {
+				fileTabBtn.classList.add("active");
+				youtubeTabBtn.classList.remove("active");
+				fileTab.classList.add("active");
+				youtubeTab.classList.remove("active");
+				addSongResult.classList.remove("success", "error");
+			});
+
+			youtubeTabBtn.addEventListener("click", () => {
+				youtubeTabBtn.classList.add("active");
+				fileTabBtn.classList.remove("active");
+				youtubeTab.classList.add("active");
+				fileTab.classList.remove("active");
+				addSongResult.classList.remove("success", "error");
+			});
+
+			// Upload song from file
+			uploadSongBtn.addEventListener("click", async () => {
+				const file = songFile.files[0];
+				const title = songTitle.value.trim();
+				const artist = songArtist.value.trim();
+
+				if (!file) {
+					showAddSongResult("Please select an audio file", "error");
+					return;
+				}
+
+				if (!title || !artist) {
+					showAddSongResult("Please enter both title and artist", "error");
+					return;
+				}
+
+				try {
+					uploadSongBtn.disabled = true;
+					addSongProgress.classList.add("active");
+					addSongResult.classList.remove("success", "error");
+
+					// Create form data
+					const formData = new FormData();
+					formData.append("audio", file);
+					formData.append("title", title);
+					formData.append("artist", artist);
+
+					updateAddSongProgress(30, "Uploading file...");
+
+					const response = await fetch(`${SERVER_URL}/api/songs`, {
+						method: "POST",
+						body: formData,
+					});
+
+					updateAddSongProgress(80, "Processing...");
+
+					if (!response.ok) {
+						const errorData = await response.json().catch(() => ({}));
+						throw new Error(
+							errorData.message || `Server error: ${response.status}`,
+						);
+					}
+
+					const result = await response.json();
+
+					updateAddSongProgress(100, "Complete!");
+
+					setTimeout(() => {
+						addSongProgress.classList.remove("active");
+						showAddSongResult(
+							`✅ Successfully added "${result.title}" by ${result.artist} (ID: ${result.id})`,
+							"success",
+						);
+
+						// Reset form
+						songFile.value = "";
+						songTitle.value = "";
+						songArtist.value = "";
+						uploadSongBtn.disabled = false;
+					}, 500);
+				} catch (error) {
+					console.error("Upload error:", error);
+					addSongProgress.classList.remove("active");
+					showAddSongResult(
+						`Failed to add song: ${error.message}`,
+						"error",
+					);
+					uploadSongBtn.disabled = false;
+				}
+			});
+
+			// Add song from YouTube
+			addYoutubeBtn.addEventListener("click", async () => {
+				const url = youtubeUrl.value.trim();
+				const titleOverride = youtubeTitleOverride.value.trim();
+				const artistOverride = youtubeArtistOverride.value.trim();
+
+				if (!url) {
+					showAddSongResult("Please enter a YouTube URL", "error");
+					return;
+				}
+
+				// Validate YouTube URL
+				const youtubeRegex =
+					/^(https?:\/\/)?(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/)[\w-]+/;
+				if (!youtubeRegex.test(url)) {
+					showAddSongResult("Invalid YouTube URL format", "error");
+					return;
+				}
+
+				try {
+					addYoutubeBtn.disabled = true;
+					addSongProgress.classList.add("active");
+					addSongResult.classList.remove("success", "error");
+
+					updateAddSongProgress(20, "Sending request...");
+
+					const requestBody = { youtube_url: url };
+					if (titleOverride) requestBody.title = titleOverride;
+					if (artistOverride) requestBody.artist = artistOverride;
+
+					const response = await fetch(`${SERVER_URL}/api/songs/youtube`, {
+						method: "POST",
+						headers: {
+							"Content-Type": "application/json",
+						},
+						body: JSON.stringify(requestBody),
+					});
+
+					updateAddSongProgress(60, "Downloading and processing...");
+
+					if (!response.ok) {
+						const errorData = await response.json().catch(() => ({}));
+						throw new Error(
+							errorData.message || `Server error: ${response.status}`,
+						);
+					}
+
+					const result = await response.json();
+
+					updateAddSongProgress(100, "Complete!");
+
+					setTimeout(() => {
+						addSongProgress.classList.remove("active");
+						showAddSongResult(
+							`✅ Successfully added "${result.title}" by ${result.artist} (ID: ${result.id})`,
+							"success",
+						);
+
+						// Reset form
+						youtubeUrl.value = "";
+						youtubeTitleOverride.value = "";
+						youtubeArtistOverride.value = "";
+						addYoutubeBtn.disabled = false;
+					}, 500);
+				} catch (error) {
+					console.error("YouTube add error:", error);
+					addSongProgress.classList.remove("active");
+					showAddSongResult(
+						`Failed to add song: ${error.message}`,
+						"error",
+					);
+					addYoutubeBtn.disabled = false;
+				}
+			});
+
+			// Helper functions for add song
+			function updateAddSongProgress(percent, text) {
+				addSongProgressBar.style.width = `${percent}%`;
+				addSongProgressBar.textContent = `${percent}%`;
+				addSongProgressText.textContent = text;
+			}
+
+			function showAddSongResult(message, type) {
+				addSongResult.textContent = message;
+				addSongResult.className = `result-message ${type}`;
+			}
+
+			// Initialize on page load
+			initWASM();
+		</script>
+	</body>
+</html>
