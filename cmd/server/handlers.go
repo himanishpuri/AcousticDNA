@@ -401,15 +401,22 @@ func (s *Server) handleMatchHashes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Log warning for large batches
-	if len(req.Hashes) >= HashWarningThreshold {
-		s.log.Warnf("Large hash batch received: %d hashes", len(req.Hashes))
+	// Convert string-keyed map to uint32-keyed map with validation
+	hashMap, err := req.ToHashMap()
+	if err != nil {
+		s.respondError(w, http.StatusBadRequest, err.Error())
+		return
 	}
 
-	s.log.Infof("Matching %d hashes from client", len(req.Hashes))
+	// Log warning for large batches
+	if len(hashMap) >= HashWarningThreshold {
+		s.log.Warnf("Large hash batch received: %d hashes", len(hashMap))
+	}
+
+	s.log.Infof("Matching %d hashes from client", len(hashMap))
 
 	// Match hashes
-	matches, err := s.service.MatchHashes(ctx, req.Hashes)
+	matches, err := s.service.MatchHashes(ctx, hashMap)
 	if err != nil {
 		s.log.Errorf("Failed to match hashes: %v", err)
 		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to match hashes: %v", err))

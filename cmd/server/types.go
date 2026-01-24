@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 )
 
 // Hash limit constants for validation
@@ -18,9 +19,45 @@ const (
 
 // MatchHashesRequest is the request body for POST /api/match/hashes
 type MatchHashesRequest struct {
-	// Hashes is a map where keys are the hash values (uint32) and
+	// Hashes is a map where keys are the hash values (as strings from JSON) and
 	// values are the anchor times in milliseconds
-	Hashes map[uint32]uint32 `json:"hashes" binding:"required"`
+	Hashes map[string]uint32 `json:"hashes" binding:"required"`
+}
+
+// ToHashMap converts the string-keyed hash map to uint32-keyed map
+func (r *MatchHashesRequest) ToHashMap() (map[uint32]uint32, error) {
+	result := make(map[uint32]uint32, len(r.Hashes))
+	invalidCount := 0
+
+	for hashStr, anchorTime := range r.Hashes {
+		// Parse string key as uint32
+		hash64, err := strconv.ParseUint(hashStr, 10, 32)
+		if err != nil {
+			return nil, fmt.Errorf("invalid hash key '%s': %v", hashStr, err)
+		}
+		hash := uint32(hash64)
+
+		// Validate the hash format and skip invalid ones
+		if !isValidHash(hash) {
+			invalidCount++
+			// Skip invalid hashes instead of failing the entire request
+			continue
+		}
+
+		result[hash] = anchorTime
+	}
+
+	// Log if we skipped invalid hashes
+	if invalidCount > 0 {
+		fmt.Printf("Warning: Skipped %d invalid hashes out of %d total\n", invalidCount, len(r.Hashes))
+	}
+
+	// If all hashes were invalid, that's an error
+	if len(result) == 0 {
+		return nil, fmt.Errorf("all %d hashes were invalid", len(r.Hashes))
+	}
+
+	return result, nil
 }
 
 // Validate checks if the request is valid
@@ -32,39 +69,35 @@ func (r *MatchHashesRequest) Validate() error {
 		return fmt.Errorf("too many hashes: %d (maximum: %d)", len(r.Hashes), MaxHashesHardLimit)
 	}
 
-	// Lightweight hash validation: check format
-	for hash := range r.Hashes {
-		if !isValidHash(hash) {
-			return fmt.Errorf("invalid hash format: %d", hash)
-		}
-	}
-
+	// Validation of hash format is now done in ToHashMap() during conversion
 	return nil
 }
 
 // isValidHash performs lightweight validation of hash structure
 // Hash format: [anchorFreq (9 bits) | targetFreq (9 bits) | deltaTime (14 bits)]
 func isValidHash(hash uint32) bool {
-	// Extract components
-	deltaTime := hash & 0x3FFF         // 14 bits
-	targetFreq := (hash >> 14) & 0x1FF // 9 bits
-	anchorFreq := (hash >> 23) & 0x1FF // 9 bits
+	// Extract components using the same bit layout as hasher.go
+	deltaTime := hash & 0x3FFF         // 14 bits (bits 0-13)
+	targetFreq := (hash >> 14) & 0x1FF // 9 bits (bits 14-22)
+	anchorFreq := (hash >> 23) & 0x1FF // 9 bits (bits 23-31)
 
-	// Validate ranges
-	// deltaTime: 0-16383 ms (0-16.3 seconds)
-	// anchorFreq, targetFreq: 0-511 (frequency bins)
-
-	// Check if any unused bits are set (would indicate corruption)
-	if hash > 0xFFFFFFFF {
+	// Basic sanity checks to catch obviously corrupted data
+	// deltaTime should be within valid range (MinDeltaMs=10 to MaxDeltaMs=15000)
+	if deltaTime < 10 || deltaTime > 15000 {
 		return false
 	}
 
-	// Basic sanity checks
-	if deltaTime == 0 {
-		return false // deltaTime should never be 0
+	// At least one frequency should be non-zero (both being 0 indicates corruption)
+	// Note: In rare cases, bin 0 (DC component) might be used, so we allow it
+	// if the other frequency is valid
+	if anchorFreq == 0 && targetFreq == 0 {
+		return false
 	}
-	if anchorFreq == targetFreq {
-		return false // Anchor and target should be different
+
+	// Frequencies should fit within FFT bin range (0-511 for 9 bits)
+	// This is implicitly true due to the bitmask, but we add the check for clarity
+	if anchorFreq > 511 || targetFreq > 511 {
+		return false
 	}
 
 	return true

@@ -109,3 +109,46 @@ func ComputeSpectrogram(wavPath string, windowSizeArg, hopSizeArg int) ([][]floa
 	}
 	return spectrogram, sr, nil
 }
+
+// ComputeSpectrogramFromSamples computes a spectrogram from in-memory audio samples.
+// This is designed for WASM usage where audio is already decoded by the browser's Web Audio API.
+// Unlike ComputeSpectrogram, this function accepts pre-loaded samples and does not perform file I/O.
+//
+// Parameters:
+//   - samples: mono audio samples (float64 values typically in range -1.0 to 1.0)
+//   - sampleRate: sample rate in Hz (e.g., 44100, 11025)
+//   - windowSizeArg: FFT window size (use 0 for default 1024)
+//   - hopSizeArg: hop size between frames (use 0 for default 256)
+//
+// Returns:
+//   - spectrogram: time-major magnitude spectrogram [frameIdx][freqBin]
+//   - error: any processing errors
+func ComputeSpectrogramFromSamples(samples []float64, sampleRate, windowSizeArg, hopSizeArg int) ([][]float64, error) {
+	if len(samples) == 0 {
+		return nil, errors.New("samples cannot be empty")
+	}
+	if sampleRate <= 0 {
+		return nil, errors.New("sample rate must be positive")
+	}
+
+	ws := windowSizeArg
+	if ws == 0 {
+		ws = WindowSize
+	}
+	hs := hopSizeArg
+	if hs == 0 {
+		hs = HopSize
+	}
+
+	if len(samples) < ws {
+		return nil, errors.New("audio too short for window size")
+	}
+
+	win := Hamming(ws)
+
+	spectrogram, err := STFT(samples, sampleRate, ws, hs, win)
+	if err != nil {
+		return nil, err
+	}
+	return spectrogram, nil
+}
