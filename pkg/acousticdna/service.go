@@ -14,7 +14,6 @@ import (
 	"github.com/himanishpuri/AcousticDNA/pkg/models"
 )
 
-// acousticService is the default implementation of the Service interface.
 type acousticService struct {
 	storage Storage
 	log     Logger
@@ -27,12 +26,10 @@ func NewService(opts ...Option) (Service, error) {
 		opt(cfg)
 	}
 
-	// Set default logger if none provided
 	if cfg.Logger == nil {
 		cfg.Logger = logger.GetLogger()
 	}
 
-	// Create or use provided storage
 	var stor Storage
 	var err error
 	if cfg.Storage != nil {
@@ -51,11 +48,9 @@ func NewService(opts ...Option) (Service, error) {
 	}, nil
 }
 
-// AddSong processes an audio file and stores its fingerprint in the database.
 func (s *acousticService) AddSong(ctx context.Context, audioPath, title, artist, youtubeID string) (string, error) {
 	s.log.Infof("Processing song: %s by %s", title, artist)
 
-	// 1. Convert to mono WAV
 	wavPath, err := audio.ConvertToMonoWAV(ctx, audioPath, s.config.TempDir, audio.ConvertWAVConfig{
 		SampleRate: s.config.SampleRate,
 	})
@@ -63,34 +58,28 @@ func (s *acousticService) AddSong(ctx context.Context, audioPath, title, artist,
 		return "", fmt.Errorf("audio conversion failed: %w", err)
 	}
 
-	// 2. Read WAV file to get samples for duration calculation
 	samples, sampleRate, err := audio.ReadWavAsFloat64(wavPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to read WAV file: %w", err)
 	}
 
-	// 3. Generate spectrogram
 	spec, _, err := fingerprint.ComputeSpectrogram(wavPath, 0, 0)
 	if err != nil {
 		return "", fmt.Errorf("spectrogram generation failed: %w", err)
 	}
 
-	// 4. Extract peaks
 	duration := float64(len(samples)) / float64(sampleRate)
 	peaks := fingerprint.ExtractPeaks(spec, duration, sampleRate)
 	s.log.Infof("Extracted %d peaks", len(peaks))
 
-	// 5. Register song in DB
 	songID, err := s.storage.RegisterSong(title, artist, youtubeID, int(duration*1000))
 	if err != nil {
 		return "", fmt.Errorf("failed to register song: %w", err)
 	}
 
-	// 6. Generate fingerprints
 	fps := fingerprint.Fingerprint(peaks, songID)
 	s.log.Infof("Generated %d unique hashes", len(fps))
 
-	// Convert models.Couple to Couple for storage
 	storageFPs := make(map[uint32][]models.Couple)
 	for hash, modelCouples := range fps {
 		couples := make([]models.Couple, len(modelCouples))
@@ -103,9 +92,8 @@ func (s *acousticService) AddSong(ctx context.Context, audioPath, title, artist,
 		storageFPs[hash] = couples
 	}
 
-	// 7. Store fingerprints
 	if err := s.storage.StoreFingerprints(storageFPs); err != nil {
-		s.storage.DeleteSongByID(songID) // Rollback
+		s.storage.DeleteSongByID(songID)
 		return "", fmt.Errorf("failed to store fingerprints: %w", err)
 	}
 
@@ -113,11 +101,9 @@ func (s *acousticService) AddSong(ctx context.Context, audioPath, title, artist,
 	return songID, nil
 }
 
-// MatchSong finds matches for a query audio file.
 func (s *acousticService) MatchSong(ctx context.Context, audioPath string) ([]models.MatchResult, error) {
 	s.log.Infof("Matching audio: %s", audioPath)
 
-	// 1. Convert to mono WAV
 	wavPath, err := audio.ConvertToMonoWAV(ctx, audioPath, s.config.TempDir, audio.ConvertWAVConfig{
 		SampleRate: s.config.SampleRate,
 	})
@@ -125,28 +111,23 @@ func (s *acousticService) MatchSong(ctx context.Context, audioPath string) ([]mo
 		return nil, fmt.Errorf("audio conversion failed: %w", err)
 	}
 
-	// 2. Read WAV for duration calculation
 	samples, sampleRate, err := audio.ReadWavAsFloat64(wavPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read WAV file: %w", err)
 	}
 
-	// 3. Generate spectrogram
 	spec, _, err := fingerprint.ComputeSpectrogram(wavPath, 0, 0)
 	if err != nil {
 		return nil, fmt.Errorf("spectrogram generation failed: %w", err)
 	}
 
-	// 4. Extract peaks
 	duration := float64(len(samples)) / float64(sampleRate)
 	queryPeaks := fingerprint.ExtractPeaks(spec, duration, sampleRate)
 	s.log.Infof("Query has %d peaks", len(queryPeaks))
 
-	// 5. Generate query fingerprints
-	queryFPs := fingerprint.Fingerprint(queryPeaks, "") // empty string for query
+	queryFPs := fingerprint.Fingerprint(queryPeaks, "")
 	s.log.Infof("Generated %d query hashes", len(queryFPs))
 
-	// 6. Build database fingerprint map using batch retrieval (more efficient)
 	hashList := make([]uint32, 0, len(queryFPs))
 	for hash := range queryFPs {
 		hashList = append(hashList, hash)
@@ -158,11 +139,9 @@ func (s *acousticService) MatchSong(ctx context.Context, audioPath string) ([]mo
 	}
 	s.log.Infof("Retrieved couples for %d/%d hashes", len(dbMap), len(queryFPs))
 
-	// 7. Perform in-memory matching
 	matches := fingerprint.QueryFingerprints(queryPeaks, dbMap)
 	s.log.Infof("Found %d candidate matches", len(matches))
 
-	// 8. Convert to results with song info
 	results := make([]models.MatchResult, 0, len(matches))
 	for _, match := range matches {
 		song, err := s.GetSongByID(match.SongID)
@@ -175,7 +154,7 @@ func (s *acousticService) MatchSong(ctx context.Context, audioPath string) ([]mo
 		dbFingerprintCount, err := s.storage.GetFingerprintCount(match.SongID)
 		if err != nil {
 			s.log.Warnf("Failed to get fingerprint count for song %d: %v", match.SongID, err)
-			dbFingerprintCount = len(queryFPs) // Fallback to query count
+			dbFingerprintCount = len(queryFPs)
 		}
 
 		confidence := s.calculateConfidence(match.Count, len(queryFPs), dbFingerprintCount)
@@ -195,9 +174,6 @@ func (s *acousticService) MatchSong(ctx context.Context, audioPath string) ([]mo
 	return results, nil
 }
 
-// MatchHashes finds matches for pre-computed hashes.
-// This is optimized for WASM clients that generate fingerprints locally
-// and only send hashes to the server for matching (privacy-preserving).
 func (s *acousticService) MatchHashes(ctx context.Context, hashes map[uint32]uint32) ([]models.MatchResult, error) {
 	s.log.Infof("Matching %d pre-computed hashes", len(hashes))
 
@@ -205,13 +181,11 @@ func (s *acousticService) MatchHashes(ctx context.Context, hashes map[uint32]uin
 		return []models.MatchResult{}, nil
 	}
 
-	// 1. Build hash list for batch retrieval
 	hashList := make([]uint32, 0, len(hashes))
 	for hash := range hashes {
 		hashList = append(hashList, hash)
 	}
 
-	// 2. Retrieve all matches from database in a single batch query
 	dbMap, err := s.storage.GetCouplesByHashes(hashList)
 	if err != nil {
 		return nil, fmt.Errorf("failed to retrieve fingerprints from database: %w", err)

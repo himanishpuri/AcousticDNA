@@ -15,11 +15,9 @@ import (
 )
 
 type ConvertWAVConfig struct {
-	SampleRate int // e.g. 11025, 22050, 44100
+	SampleRate int
 }
 
-// ConvertToMonoWAV converts an audio file to mono PCM WAV
-// and saves it to outputDir, preserving the filename.
 func ConvertToMonoWAV(
 	ctx context.Context,
 	inputPath string,
@@ -31,7 +29,6 @@ func ConvertToMonoWAV(
 		cfg.SampleRate = 11025
 	}
 
-	// Defensive timeout
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, 10*time.Second)
@@ -86,8 +83,6 @@ type YTMetadata struct {
 	WebpageURL string  `json:"webpage_url"` // Canonical YouTube URL
 }
 
-// pickArtist selects the best available artist field from YouTube metadata
-// with fallback chain: Artist → Channel → Uploader → "Unknown Artist"
 func pickArtist(meta YTMetadata) string {
 	if strings.TrimSpace(meta.Artist) != "" {
 		return meta.Artist
@@ -101,15 +96,7 @@ func pickArtist(meta YTMetadata) string {
 	return "Unknown Artist"
 }
 
-// DownloadYouTubeAudio downloads audio from a YouTube URL using yt-dlp
-// and returns the audio file path along with metadata.
-//
-// This function:
-// 1. Extracts metadata using yt-dlp -J
-// 2. Downloads best audio stream using yt-dlp -f ba
-// 3. Returns audio path (will be converted to WAV by service)
 func DownloadYouTubeAudio(ctx context.Context, youtubeURL string, outputDir string, sampleRate int) (audioPath string, metadata *YTMetadata, err error) {
-	// Defensive timeout
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, 3*time.Minute)
@@ -117,7 +104,7 @@ func DownloadYouTubeAudio(ctx context.Context, youtubeURL string, outputDir stri
 	}
 
 	if sampleRate == 0 {
-		sampleRate = 11025 // Default sample rate
+		sampleRate = 11025
 	}
 
 	if err := utils.MakeDir(outputDir); err != nil {

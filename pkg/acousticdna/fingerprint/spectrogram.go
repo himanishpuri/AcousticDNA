@@ -14,11 +14,9 @@ const (
 	HopSize    = 256
 )
 
-// Hamming returns a Hamming window of length n.
 func Hamming(n int) []float64 {
 	w := make([]float64, n)
 	for i := 0; i < n; i++ {
-		// Hamming: 0.54 - 0.46*cos(2*pi*n/(N-1))
 		w[i] = 0.54 - 0.46*mathCos(2*mathPi*float64(i)/float64(n-1))
 	}
 	return w
@@ -31,19 +29,12 @@ const (
 
 func mathCos(x float64) float64 { return mathCosStd(x) }
 
-// We define a thin wrapper to the standard library's math.Cos to keep the imports
-// in one place in this file for readability (and to make the code snippet self-contained).
-// In production you can call math.Cos directly and remove these helpers.
-
 func mathCosStd(x float64) float64 { return math.Cos(x) }
 
-// FFTReal wraps the go-dsp FFT function and returns a complex spectrum.
 func FFTReal(frame []float64) []complex128 {
-	// the library provides FFT on real inputs
 	return fft.FFTReal(frame)
 }
 
-// MagnitudeSpectrum converts a complex spectrum into a magnitude spectrum (positive freqs only)
 func MagnitudeSpectrum(spectrum []complex128) []float64 {
 	n := len(spectrum)
 	half := n / 2
@@ -54,8 +45,6 @@ func MagnitudeSpectrum(spectrum []complex128) []float64 {
 	return mag
 }
 
-// STFT computes the short-time FFT (spectrogram) and returns a time-major
-// magnitude spectrogram: spectrogram[frameIdx][freqBin].
 func STFT(samples []float64, sampleRate, windowSize, hopSize int, window []float64) ([][]float64, error) {
 	if len(window) != windowSize {
 		return nil, errors.New("window length must equal windowSize")
@@ -69,11 +58,9 @@ func STFT(samples []float64, sampleRate, windowSize, hopSize int, window []float
 		end := start + windowSize
 		frame := make([]float64, windowSize)
 		copy(frame, samples[start:end])
-		// apply window
 		for i := 0; i < windowSize; i++ {
 			frame[i] *= window[i]
 		}
-		// compute FFT
 		spec := FFTReal(frame)
 		mag := MagnitudeSpectrum(spec)
 		spectrogram = append(spectrogram, mag)
@@ -81,12 +68,7 @@ func STFT(samples []float64, sampleRate, windowSize, hopSize int, window []float
 	return spectrogram, nil
 }
 
-// ComputeSpectrogram is the top-level helper that reads a 16-bit PCM WAV file,
-// converts it to float64 mono samples, builds the Hamming window (if nil),
-// runs the STFT and returns the spectrogram. It uses package-level defaults when
-// windowSize/hopSize are zero.
 func ComputeSpectrogram(wavPath string, windowSizeArg, hopSizeArg int) ([][]float64, int, error) {
-	// load samples
 	samples, sr, err := audio.ReadWavAsFloat64(wavPath)
 	if err != nil {
 		return nil, 0, err
@@ -110,19 +92,6 @@ func ComputeSpectrogram(wavPath string, windowSizeArg, hopSizeArg int) ([][]floa
 	return spectrogram, sr, nil
 }
 
-// ComputeSpectrogramFromSamples computes a spectrogram from in-memory audio samples.
-// This is designed for WASM usage where audio is already decoded by the browser's Web Audio API.
-// Unlike ComputeSpectrogram, this function accepts pre-loaded samples and does not perform file I/O.
-//
-// Parameters:
-//   - samples: mono audio samples (float64 values typically in range -1.0 to 1.0)
-//   - sampleRate: sample rate in Hz (e.g., 44100, 11025)
-//   - windowSizeArg: FFT window size (use 0 for default 1024)
-//   - hopSizeArg: hop size between frames (use 0 for default 256)
-//
-// Returns:
-//   - spectrogram: time-major magnitude spectrogram [frameIdx][freqBin]
-//   - error: any processing errors
 func ComputeSpectrogramFromSamples(samples []float64, sampleRate, windowSizeArg, hopSizeArg int) ([][]float64, error) {
 	if len(samples) == 0 {
 		return nil, errors.New("samples cannot be empty")

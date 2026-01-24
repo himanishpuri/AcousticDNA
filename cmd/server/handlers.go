@@ -17,14 +17,12 @@ import (
 	"github.com/himanishpuri/AcousticDNA/pkg/utils"
 )
 
-// Server encapsulates the HTTP server and its dependencies
 type Server struct {
 	service acousticdna.Service
 	config  *ServerConfig
 	log     acousticdna.Logger
 }
 
-// ServerConfig holds server configuration
 type ServerConfig struct {
 	Port           int
 	DBPath         string
@@ -33,7 +31,6 @@ type ServerConfig struct {
 	AllowedOrigins []string
 }
 
-// NewServer creates a new server instance
 func NewServer(service acousticdna.Service, config *ServerConfig) *Server {
 	return &Server{
 		service: service,
@@ -42,7 +39,6 @@ func NewServer(service acousticdna.Service, config *ServerConfig) *Server {
 	}
 }
 
-// respondJSON writes a JSON response
 func (s *Server) respondJSON(w http.ResponseWriter, statusCode int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
@@ -51,7 +47,6 @@ func (s *Server) respondJSON(w http.ResponseWriter, statusCode int, data interfa
 	}
 }
 
-// respondError writes an error response
 func (s *Server) respondError(w http.ResponseWriter, statusCode int, message string) {
 	s.respondJSON(w, statusCode, models.ErrorResponse{
 		Error:   http.StatusText(statusCode),
@@ -60,31 +55,6 @@ func (s *Server) respondError(w http.ResponseWriter, statusCode int, message str
 	})
 }
 
-// handleRoot handles GET /
-func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
-		http.NotFound(w, r)
-		return
-	}
-
-	s.respondJSON(w, http.StatusOK, map[string]interface{}{
-		"service": "AcousticDNA API",
-		"version": "1.0.0",
-		"endpoints": map[string]string{
-			"health":         "GET /health",
-			"metrics":        "GET /api/health/metrics",
-			"songs":          "GET /api/songs",
-			"addSongFile":    "POST /api/songs",
-			"addSongYouTube": "POST /api/songs/youtube",
-			"getSong":        "GET /api/songs/{id}",
-			"deleteSong":     "DELETE /api/songs/{id}",
-			"matchFile":      "POST /api/match",
-			"matchHashes":    "POST /api/match/hashes",
-		},
-	})
-}
-
-// handleHealth handles GET /health
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	s.respondJSON(w, http.StatusOK, map[string]string{
 		"status": "healthy",
@@ -92,7 +62,6 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleMetrics handles GET /api/health/metrics
 func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	songs, err := s.service.ListSongs()
 	if err != nil {
@@ -109,7 +78,6 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleListSongs handles GET /api/songs
 func (s *Server) handleListSongs(w http.ResponseWriter, r *http.Request) {
 	songs, err := s.service.ListSongs()
 	if err != nil {
@@ -135,7 +103,6 @@ func (s *Server) handleListSongs(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleGetSong handles GET /api/songs/{id}
 func (s *Server) handleGetSong(w http.ResponseWriter, r *http.Request, songID string) {
 	song, err := s.service.GetSongByID(songID)
 	if err != nil {
@@ -153,9 +120,8 @@ func (s *Server) handleGetSong(w http.ResponseWriter, r *http.Request, songID st
 	})
 }
 
-// handleDeleteSong handles DELETE /api/songs/{id}
 func (s *Server) handleDeleteSong(w http.ResponseWriter, r *http.Request, songID string) {
-	// Get song info before deletion
+	// Get song before deleting for response
 	song, err := s.service.GetSongByID(songID)
 	if err != nil {
 		s.log.Warnf("Song not found for deletion: %s", songID)
@@ -176,19 +142,17 @@ func (s *Server) handleDeleteSong(w http.ResponseWriter, r *http.Request, songID
 	})
 }
 
-// handleAddSongFile handles POST /api/songs (multipart file upload)
 func (s *Server) handleAddSongFile(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
 	defer cancel()
 
-	// Parse multipart form (max 100MB)
+	// Max 100MB
 	if err := r.ParseMultipartForm(100 << 20); err != nil {
 		s.log.Errorf("Failed to parse form: %v", err)
 		s.respondError(w, http.StatusBadRequest, "Failed to parse form data")
 		return
 	}
 
-	// Get form fields
 	title := r.FormValue("title")
 	artist := r.FormValue("artist")
 	youtubeID := r.FormValue("youtube_id")
@@ -198,7 +162,6 @@ func (s *Server) handleAddSongFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get uploaded file
 	file, header, err := r.FormFile("audio")
 	if err != nil {
 		s.log.Errorf("Failed to get audio file: %v", err)
@@ -207,7 +170,6 @@ func (s *Server) handleAddSongFile(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	// Save to temporary file
 	tempFile := filepath.Join(s.config.TempDir, fmt.Sprintf("upload_%d_%s", time.Now().UnixNano(), header.Filename))
 	out, err := os.Create(tempFile)
 	if err != nil {
@@ -225,7 +187,6 @@ func (s *Server) handleAddSongFile(w http.ResponseWriter, r *http.Request) {
 	}
 	out.Close()
 
-	// Add song to database
 	s.log.Infof("Adding song from file: %s by %s", title, artist)
 	songID, err := s.service.AddSong(ctx, tempFile, title, artist, youtubeID)
 	if err != nil {
@@ -244,7 +205,6 @@ func (s *Server) handleAddSongFile(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleAddSongYouTube handles POST /api/songs/youtube
 func (s *Server) handleAddSongYouTube(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
 	defer cancel()
@@ -263,7 +223,6 @@ func (s *Server) handleAddSongYouTube(w http.ResponseWriter, r *http.Request) {
 
 	s.log.Infof("Adding song from YouTube URL: %s", req.YouTubeURL)
 
-	// Download YouTube audio
 	downloadedPath, ytMeta, err := audio.DownloadYouTubeAudio(ctx, req.YouTubeURL, s.config.TempDir, s.config.SampleRate)
 	if err != nil {
 		s.log.Errorf("Failed to download YouTube video: %v", err)
@@ -272,7 +231,7 @@ func (s *Server) handleAddSongYouTube(w http.ResponseWriter, r *http.Request) {
 	}
 	defer os.Remove(downloadedPath)
 
-	// Use metadata from YouTube if not provided
+	// Use YouTube metadata if not provided
 	title := req.Title
 	artist := req.Artist
 	if title == "" {
@@ -282,20 +241,17 @@ func (s *Server) handleAddSongYouTube(w http.ResponseWriter, r *http.Request) {
 		artist = ytMeta.Artist
 	}
 
-	// Extract YouTube ID
 	youtubeID, err := utils.ExtractYouTubeID(req.YouTubeURL)
 	if err != nil {
 		s.log.Warnf("Failed to extract YouTube ID: %v", err)
 		youtubeID = ""
 	}
 
-	// Validate we have title and artist
 	if title == "" || artist == "" {
 		s.respondError(w, http.StatusBadRequest, "Could not determine title or artist from YouTube metadata. Please provide them explicitly.")
 		return
 	}
 
-	// Add song to database
 	s.log.Infof("Adding downloaded song: %s by %s", title, artist)
 	songID, err := s.service.AddSong(ctx, downloadedPath, title, artist, youtubeID)
 	if err != nil {
@@ -314,12 +270,11 @@ func (s *Server) handleAddSongYouTube(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleMatchFile handles POST /api/match (multipart file upload)
 func (s *Server) handleMatchFile(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 	defer cancel()
 
-	// Parse multipart form (max 50MB)
+	// Max 50MB
 	if err := r.ParseMultipartForm(50 << 20); err != nil {
 		s.log.Errorf("Failed to parse form: %v", err)
 		s.respondError(w, http.StatusBadRequest, "Failed to parse form data")
@@ -353,7 +308,6 @@ func (s *Server) handleMatchFile(w http.ResponseWriter, r *http.Request) {
 	}
 	out.Close()
 
-	// Match song
 	s.log.Infof("Matching uploaded file: %s", header.Filename)
 	matches, err := s.service.MatchSong(ctx, tempFile)
 	if err != nil {
@@ -383,7 +337,7 @@ func (s *Server) handleMatchFile(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleMatchHashes handles POST /api/match/hashes (hash-based matching for WASM clients)
+// For WASM clients - matches pre-computed hashes
 func (s *Server) handleMatchHashes(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
@@ -395,13 +349,12 @@ func (s *Server) handleMatchHashes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate request
 	if err := req.Validate(); err != nil {
 		s.respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	// Convert string-keyed map to uint32-keyed map with validation
+	// Convert string map to uint32 with validation
 	hashMap, err := req.ToHashMap()
 	if err != nil {
 		s.respondError(w, http.StatusBadRequest, err.Error())
@@ -415,7 +368,6 @@ func (s *Server) handleMatchHashes(w http.ResponseWriter, r *http.Request) {
 
 	s.log.Infof("Matching %d hashes from client", len(hashMap))
 
-	// Match hashes
 	matches, err := s.service.MatchHashes(ctx, hashMap)
 	if err != nil {
 		s.log.Errorf("Failed to match hashes: %v", err)

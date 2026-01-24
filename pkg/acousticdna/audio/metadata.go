@@ -49,10 +49,7 @@ func (p *ffprobeOutput) firstAudioStream() *ffprobeStream {
 	return nil
 }
 
-// ReadMetadataFFmpeg extracts audio metadata using ffprobe.
-// The context controls cancellation and timeouts.
 func ReadMetadataFFmpeg(ctx context.Context, path string) (*Metadata, error) {
-	// Defensive default timeout if caller didn't set one
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
@@ -71,7 +68,6 @@ func ReadMetadataFFmpeg(ctx context.Context, path string) (*Metadata, error) {
 
 	out, err := cmd.Output()
 	if err != nil {
-		// Context cancellation shows up here
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}

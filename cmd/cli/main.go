@@ -25,7 +25,6 @@ var (
 )
 
 func init() {
-	// Global flags that can be used with any command
 	flag.StringVar(&dbPath, "db", getEnvOrDefault("ACOUSTIC_DB_PATH", "acousticdna.sqlite3"), "Path to the SQLite database file")
 	flag.StringVar(&tempDir, "temp", getEnvOrDefault("ACOUSTIC_TEMP_DIR", "/tmp"), "Directory for temporary audio conversion files")
 	flag.IntVar(&sampleRate, "rate", 11025, "Audio sample rate for processing")
@@ -38,7 +37,6 @@ func getEnvOrDefault(key, defaultValue string) string {
 	return defaultValue
 }
 
-// createService creates a new AcousticDNA service with configured options
 func createService() (acousticdna.Service, error) {
 	return acousticdna.NewService(
 		acousticdna.WithDBPath(dbPath),
@@ -99,7 +97,6 @@ func handleAdd() {
 	var audioPath string
 	var flagArgs []string
 
-	// Separate the audio file path from flags
 	for i, arg := range args {
 		if !strings.HasPrefix(arg, "-") && audioPath == "" {
 			audioPath = arg
@@ -109,7 +106,6 @@ func handleAdd() {
 		}
 	}
 
-	// Parse flags
 	addCmd := flag.NewFlagSet("add", flag.ExitOnError)
 	title := addCmd.String("title", "", "Song title (required unless using --youtube-url)")
 	artist := addCmd.String("artist", "", "Artist name (required unless using --youtube-url)")
@@ -118,7 +114,6 @@ func handleAdd() {
 
 	addCmd.Parse(flagArgs)
 
-	// Determine if we're using YouTube URL or local file
 	var isYouTubeMode bool
 	if *youtubeURL != "" {
 		isYouTubeMode = true
@@ -134,7 +129,6 @@ func handleAdd() {
 		os.Exit(1)
 	}
 
-	// Declare service and error variables for use throughout function
 	var svc acousticdna.Service
 	var err error
 
@@ -165,7 +159,6 @@ func handleAdd() {
 			os.Exit(1)
 		}
 
-		// Use metadata from YouTube if not provided by user
 		if *title == "" {
 			*title = ytMeta.Title
 			log.Infof("Using YouTube title: %s", *title)
@@ -175,7 +168,6 @@ func handleAdd() {
 			log.Infof("Using YouTube artist: %s", *artist)
 		}
 
-		// Extract YouTube ID from URL
 		if *youtube == "" {
 			ytID, err := utils.ExtractYouTubeID(*youtubeURL)
 			if err != nil {
@@ -186,7 +178,6 @@ func handleAdd() {
 			}
 		}
 
-		// Validate we have title and artist
 		if *title == "" || *artist == "" {
 			fmt.Println("Error: Could not determine title or artist from YouTube metadata")
 			fmt.Println("Please provide --title and --artist explicitly")
@@ -207,7 +198,6 @@ func handleAdd() {
 
 	log.Infof("Adding song: '%s' by '%s' from file: %s", *title, *artist, audioPath)
 
-	// Create service for local file mode (YouTube mode already created it)
 	if !isYouTubeMode {
 		fmt.Println("\n🔧 Initializing service...")
 		svc, err = createService()
@@ -219,7 +209,6 @@ func handleAdd() {
 		defer svc.Close()
 	}
 
-	// Add song
 	fmt.Println("🎵 Processing audio file...")
 	fmt.Println("   This may take a few moments for large files")
 
@@ -374,7 +363,6 @@ func handleDelete() {
 		os.Exit(1)
 	}
 
-	// Delete
 	if err := svc.DeleteSong(songID); err != nil {
 		fmt.Printf("❌ Failed to delete song: %v\n", err)
 		log.Errorf("DeleteSong failed: %v", err)

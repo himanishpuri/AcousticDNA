@@ -8,12 +8,12 @@ import (
 	"github.com/himanishpuri/AcousticDNA/pkg/logger"
 )
 
-// setupRoutes registers all HTTP routes and middleware
 func (s *Server) setupRoutes() http.Handler {
 	mux := http.NewServeMux()
 
-	// Root endpoint
-	mux.HandleFunc("/", s.handleRoot)
+	// Serve static web files
+	fs := http.FileServer(http.Dir("./web/public"))
+	mux.Handle("/", fs)
 
 	// Health endpoints
 	mux.HandleFunc("/health", s.handleHealth)
@@ -32,20 +32,16 @@ func (s *Server) setupRoutes() http.Handler {
 	return corsMiddleware(s.config.AllowedOrigins)(mux)
 }
 
-// corsMiddleware adds CORS headers to responses
 func corsMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			origin := r.Header.Get("Origin")
 
-			// Check if origin is allowed
 			allowed := false
 			if len(allowedOrigins) == 0 || (len(allowedOrigins) == 1 && allowedOrigins[0] == "*") {
-				// Allow all origins
 				w.Header().Set("Access-Control-Allow-Origin", "*")
 				allowed = true
 			} else {
-				// Check if origin is in allowed list
 				for _, allowedOrigin := range allowedOrigins {
 					if allowedOrigin == origin {
 						w.Header().Set("Access-Control-Allow-Origin", origin)
@@ -62,7 +58,6 @@ func corsMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
 				w.Header().Set("Access-Control-Allow-Credentials", "true")
 			}
 
-			// Handle preflight requests
 			if r.Method == "OPTIONS" {
 				w.WriteHeader(http.StatusNoContent)
 				return
@@ -73,24 +68,20 @@ func corsMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
 	}
 }
 
-// loggingMiddleware logs all HTTP requests
 func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Create a response writer wrapper to capture status code
 		wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
 
-		// Log request
 		logger := logger.GetLogger()
 		logger.Infof("%s %s from %s", r.Method, r.URL.Path, getClientIP(r))
 
 		next.ServeHTTP(wrapped, r)
 
-		// Log response
 		logger.Infof("%s %s -> %d", r.Method, r.URL.Path, wrapped.statusCode)
 	})
 }
 
-// responseWriter wraps http.ResponseWriter to capture the status code
 type responseWriter struct {
 	http.ResponseWriter
 	statusCode int
@@ -101,9 +92,7 @@ func (rw *responseWriter) WriteHeader(code int) {
 	rw.ResponseWriter.WriteHeader(code)
 }
 
-// getClientIP extracts the client IP from the request
 func getClientIP(r *http.Request) string {
-	// Check X-Forwarded-For header first
 	xff := r.Header.Get("X-Forwarded-For")
 	if xff != "" {
 		// X-Forwarded-For can contain multiple IPs, take the first one
@@ -113,22 +102,18 @@ func getClientIP(r *http.Request) string {
 		}
 	}
 
-	// Check X-Real-IP header
 	xri := r.Header.Get("X-Real-IP")
 	if xri != "" {
 		return xri
 	}
 
-	// Fall back to RemoteAddr
 	ip := r.RemoteAddr
-	// Remove port if present
 	if idx := strings.LastIndex(ip, ":"); idx != -1 {
 		ip = ip[:idx]
 	}
 	return ip
 }
 
-// Start starts the HTTP server
 func (s *Server) Start() error {
 	handler := s.setupRoutes()
 

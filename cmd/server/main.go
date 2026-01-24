@@ -1,5 +1,6 @@
 //go:build !js && !wasm
 // +build !js,!wasm
+
 package main
 
 import (
@@ -36,8 +37,6 @@ func getEnvOrDefault(key, defaultValue string) string {
 
 func main() {
 	flag.Parse()
-
-	// Parse allowed origins
 	var origins []string
 	if allowedOrigins == "*" {
 		origins = []string{"*"}
@@ -48,7 +47,6 @@ func main() {
 		}
 	}
 
-	// Create AcousticDNA service
 	service, err := acousticdna.NewService(
 		acousticdna.WithDBPath(dbPath),
 		acousticdna.WithTempDir(tempDir),
@@ -59,7 +57,6 @@ func main() {
 	}
 	defer service.Close()
 
-	// Create server configuration
 	config := &ServerConfig{
 		Port:           port,
 		DBPath:         dbPath,
@@ -68,7 +65,6 @@ func main() {
 		AllowedOrigins: origins,
 	}
 
-	// Create and start server
 	server := NewServer(service, config)
 	if err := server.Start(); err != nil {
 		log.Fatalf("Server failed: %v", err)

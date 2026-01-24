@@ -20,19 +20,14 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Default DB file name (can be overridden with env var ACOUSTIC_DB_PATH)
 const DefaultDBFile = "acousticdna.sqlite3"
-
-// Error messages
 const errDBClientNil = "db client is nil"
 
-// DBClient wraps a GORM DB handle.
 type DBClient struct {
 	DB *gorm.DB
-	db *sql.DB // underlying sql.DB for Close
+	db *sql.DB
 }
 
-// Song model stores canonical metadata and external IDs.
 type Song struct {
 	ID         string `gorm:"primaryKey;type:varchar(36)"`
 	Title      string `gorm:"uniqueIndex:idx_song_unique,priority:1;index:idx_song_meta,priority:1" json:"title"`
@@ -43,8 +38,6 @@ type Song struct {
 	CreatedAt  time.Time
 }
 
-// Fingerprint row: a hash entry pointing to a song and an anchor time (ms).
-// We index on `Hash` for fast lookup by query.
 type Fingerprint struct {
 	ID           uint   `gorm:"primaryKey;autoIncrement"`
 	Hash         uint32 `gorm:"index:idx_hash" json:"hash"`
@@ -52,8 +45,6 @@ type Fingerprint struct {
 	AnchorTimeMs uint32 `json:"anchor_time_ms"`
 }
 
-// NewDBClient opens (or creates) the SQLite database, runs migrations and returns a client.
-// If the env var ACOUSTIC_DB_PATH is set, it will use that path, otherwise it uses DefaultDBFile.
 func NewDBClient() (*DBClient, error) {
 	dbPath := os.Getenv("ACOUSTIC_DB_PATH")
 	if dbPath == "" {
@@ -62,16 +53,13 @@ func NewDBClient() (*DBClient, error) {
 	return NewDBClientWithPath(dbPath)
 }
 
-// NewDBClientWithPath opens (or creates) the SQLite database at the specified path.
 func NewDBClientWithPath(dbPath string) (*DBClient, error) {
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil && !os.IsExist(err) {
-		// if DefaultDBFile is in working dir, Dir() == "." which is fine
 		if filepath.Dir(dbPath) != "." {
 			return nil, fmt.Errorf("creating db dir: %w", err)
 		}
 	}
 
-	// Use a quiet logger unless debug is required
 	gormConfig := &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	}
@@ -86,12 +74,10 @@ func NewDBClientWithPath(dbPath string) (*DBClient, error) {
 		return nil, fmt.Errorf("getting sql.DB from gorm: %w", err)
 	}
 
-	// Tune connection pool for concurrency (safe defaults for local use)
 	sqlDB.SetMaxOpenConns(25)
 	sqlDB.SetMaxIdleConns(5)
 	sqlDB.SetConnMaxLifetime(time.Hour)
 
-	// Auto-migrate schema
 	if err := db.AutoMigrate(&Song{}, &Fingerprint{}); err != nil {
 		sqlDB.Close()
 		return nil, fmt.Errorf("auto migrate: %w", err)
@@ -100,7 +86,6 @@ func NewDBClientWithPath(dbPath string) (*DBClient, error) {
 	return &DBClient{DB: db, db: sqlDB}, nil
 }
 
-// Close closes underlying DB connection.
 func (c *DBClient) Close() error {
 	if c == nil || c.db == nil {
 		return nil
@@ -108,9 +93,6 @@ func (c *DBClient) Close() error {
 	return c.db.Close()
 }
 
-// RegisterSong inserts a new song record and returns the generated song ID.
-// If a song with the same title+artist already exists, it returns the existing ID (idempotent-ish).
-// This function is safe for concurrent use thanks to unique constraint on title+artist.
 func (c *DBClient) RegisterSong(title, artist, youtubeID string, durationMs int) (string, error) {
 	if c == nil || c.DB == nil {
 		return "", errors.New(errDBClientNil)
@@ -118,10 +100,8 @@ func (c *DBClient) RegisterSong(title, artist, youtubeID string, durationMs int)
 
 	var song Song
 
-	// Try to find existing song first
 	err := c.DB.Where("title = ? AND artist = ?", title, artist).First(&song).Error
 	if err == nil {
-		// Song exists, update YouTubeID if needed
 		if song.YouTubeID == "" && youtubeID != "" {
 			if err := c.DB.Model(&song).Update("YouTubeID", youtubeID).Error; err != nil {
 				return "", fmt.Errorf("updating youtube_id: %w", err)
@@ -135,17 +115,13 @@ func (c *DBClient) RegisterSong(title, artist, youtubeID string, durationMs int)
 		return "", fmt.Errorf("querying existing song: %w", err)
 	}
 
-	// Song doesn't exist, try to create it
 	uuid := utils.GenerateUUID()
 	song = Song{ID: uuid, Title: title, Artist: artist, YouTubeID: youtubeID, DurationMs: durationMs}
 	err = c.DB.Create(&song).Error
 	if err != nil {
-		// Check if error is due to unique constraint violation (concurrent insert)
-		// If so, retry the lookup to get the song created by another goroutine
 		if errors.Is(err, gorm.ErrDuplicatedKey) ||
 			(err.Error() != "" && (strings.Contains(err.Error(), "UNIQUE constraint failed") ||
 				strings.Contains(err.Error(), "constraint failed"))) {
-			// Another goroutine created it, fetch again
 			if fetchErr := c.DB.Where("title = ? AND artist = ?", title, artist).First(&song).Error; fetchErr != nil {
 				return "", fmt.Errorf("fetching song after constraint violation: %w", fetchErr)
 			}
@@ -157,7 +133,6 @@ func (c *DBClient) RegisterSong(title, artist, youtubeID string, durationMs int)
 	return song.ID, nil
 }
 
-// DeleteSongByID deletes a song and all its fingerprints in a transaction.
 func (c *DBClient) DeleteSongByID(songID string) error {
 	if c == nil || c.DB == nil {
 		return errors.New(errDBClientNil)
@@ -173,14 +148,11 @@ func (c *DBClient) DeleteSongByID(songID string) error {
 	})
 }
 
-// StoreFingerprints stores a map[hash][]audio.Couple into the database in batches.
-// It is efficient and uses GORM CreateInBatches under the hood.
 func (c *DBClient) StoreFingerprints(fp map[uint32][]models.Couple) error {
 	if c == nil || c.DB == nil {
 		return errors.New(errDBClientNil)
 	}
 
-	// Prepare slices for batch insertion
 	entries := make([]Fingerprint, 0, 1024)
 	for hash, couples := range fp {
 		for _, cou := range couples {
@@ -189,7 +161,6 @@ func (c *DBClient) StoreFingerprints(fp map[uint32][]models.Couple) error {
 				SongID:       cou.SongID,
 				AnchorTimeMs: uint32(cou.AnchorTimeMs),
 			})
-			// flush periodically to avoid huge memory spikes
 			if len(entries) >= 1000 {
 				if err := c.DB.CreateInBatches(entries, 500).Error; err != nil {
 					return fmt.Errorf("batch insert fingerprints: %w", err)
@@ -206,7 +177,6 @@ func (c *DBClient) StoreFingerprints(fp map[uint32][]models.Couple) error {
 	return nil
 }
 
-// GetCouplesByHash returns a slice of models.Couple for a given hash from DB.
 func (c *DBClient) GetCouplesByHash(hash uint32) ([]models.Couple, error) {
 	if c == nil || c.DB == nil {
 		return nil, errors.New(errDBClientNil)
@@ -222,9 +192,6 @@ func (c *DBClient) GetCouplesByHash(hash uint32) ([]models.Couple, error) {
 	return out, nil
 }
 
-// GetCouplesByHashes retrieves couples for multiple hashes in a single query.
-// This is significantly more efficient than calling GetCouplesByHash in a loop
-// as it uses a single SQL query with an IN clause.
 func (c *DBClient) GetCouplesByHashes(hashes []uint32) (map[uint32][]models.Couple, error) {
 	if c == nil || c.DB == nil {
 		return nil, errors.New(errDBClientNil)
@@ -233,7 +200,6 @@ func (c *DBClient) GetCouplesByHashes(hashes []uint32) (map[uint32][]models.Coup
 		return make(map[uint32][]models.Couple), nil
 	}
 
-	// Convert []uint32 to []interface{} for GORM's IN clause
 	hashesInterface := make([]interface{}, len(hashes))
 	for i, h := range hashes {
 		hashesInterface[i] = h
@@ -244,7 +210,6 @@ func (c *DBClient) GetCouplesByHashes(hashes []uint32) (map[uint32][]models.Coup
 		return nil, fmt.Errorf("batch querying fingerprints: %w", err)
 	}
 
-	// Group results by hash
 	result := make(map[uint32][]models.Couple)
 	for _, r := range rows {
 		result[r.Hash] = append(result[r.Hash], models.Couple{
