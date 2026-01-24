@@ -1,0 +1,19 @@
+version: "3.8"
+
+services:
+   acousticdna:
+      build: .
+      container_name: acousticdna-dev
+      ports:
+         - "8080:8080"
+      environment:
+         - ACOUSTIC_DB_PATH=/app/data/acousticdna.sqlite3
+         - ACOUSTIC_TEMP_DIR=/app/temp
+         - PORT=8080
+      volumes:
+         - ./data:/app/data
+         - ./temp:/app/temp
+         - ./web:/app/web
+      restart: unless-stopped
+      stdin_open: true
+      tty: true

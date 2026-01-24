@@ -1,0 +1,44 @@
+# Binaries
+acousticdna-server
+acousticdna-cli
+acousticDNA
+*.exe
+*.wasm
+
+# Database files
+*.sqlite3
+*.db
+
+# Test data
+test/
+testdata/
+refrence_scripts/
+scripts/
+
+# Spectrograms
+test/spectrograms/
+*.png
+
+# Temporary files
+/tmp/
+*.tmp
+*.log
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# OS files
+.DS_Store
+Thumbs.db
