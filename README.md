@@ -25,6 +25,7 @@
 
 - Go 1.25+ ([Download](https://go.dev/dl/))
 - FFmpeg & FFprobe ([Download](https://ffmpeg.org/download.html))
+- yt-dlp ([Download](https://github.com/yt-dlp/yt-dlp?tab=readme-ov-file#installation))
 
 ```bash
 # Clone and build
