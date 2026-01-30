@@ -350,64 +350,66 @@ curl -X POST http://localhost:8080/api/songs/youtube \
 ## 🏢 Project Structure
 
 ```
-AcousticDNA/
-├── cmd/                         # Executables
-│   ├── cli/
-│   │   └── main.go             # CLI tool (add/match/list/delete)
-│   ├── server/                 # REST API server
-│   │   ├── main.go             # Server entry point
-│   │   ├── handlers.go         # HTTP request handlers
-│   │   ├── routes.go           # Route registration & CORS
-│   │   └── types.go            # Request/Response DTOs
-│   └── wasm/
-│       └── main.go             # WASM entry point
-│
-├── pkg/                        # Core libraries
-│   ├── acousticdna/            # Main library
-│   │   ├── audio/
-│   │   │   ├── metadata.go    # FFprobe metadata extraction
-│   │   │   ├── processor.go   # FFmpeg audio conversion
-│   │   │   └── reader.go      # WAV file parser
-│   │   ├── fingerprint/
-│   │   │   ├── generator.go   # Fingerprint generation & matching
-│   │   │   ├── hasher.go      # Hash encoding/decoding
-│   │   │   ├── peaks.go       # Peak extraction
-│   │   │   └── spectrogram.go # STFT implementation
-│   │   ├── storage/
-│   │   │   └── sqlite.go      # Database client (GORM)
-│   │   ├── config.go          # Configuration
-│   │   ├── interfaces.go      # Public contracts
-│   │   ├── service.go         # Business logic orchestration
-│   │   ├── storage_adapter.go # Storage interface implementation
-│   │   └── types.go           # Public types
-│   ├── logger/
-│   │   └── logger.go          # Structured logger
-│   ├── models/                # Data models
-│   │   ├── api.go             # API DTOs
-│   │   ├── database.go        # Database models
-│   │   └── domain.go          # Domain models
-│   └── utils/                 # Utilities
-│       ├── crypto.go          # Cryptographic helpers
-│       ├── files.go           # File system operations
-│       ├── uuid.go            # UUID generation
-│       └── youtube.go         # YouTube URL parsing
-│
-├── web/                        # WASM frontend
-│   ├── public/
-│   │   ├── index.html         # Demo UI
-│   │   ├── fingerprint.wasm   # Compiled WASM binary
-│   │   ├── wasm.js            # WASM loader
-│   │   └── wasm_exec.js       # Go WASM runtime
-│   └── src/
-│       └── api/
-│           └── wasm.js        # JavaScript API wrapper
-│
-├── scripts/
-│   └── build-wasm.sh          # WASM build automation
-│
-├── go.mod                     # Go module dependencies
-├── go.sum                     # Dependency checksums
-└── README.md                  # This file
+├── acousticdna.sqlite3          # Fingerprint database
+├── cmd
+│   ├── cli
+│   │   └── main.go              # Terminal commands (add/match/list)
+│   ├── server
+│   │   ├── handlers.go          # What happens when API called
+│   │   ├── main.go              # Starts the HTTP server
+│   │   ├── routes.go            # Maps URLs to handlers
+│   │   └── types.go             # Server data structures
+│   └── wasm
+│       └── main.go              # Runs in browser
+├── go.mod
+├── go.sum
+├── pkg
+│   ├── acousticdna
+│   │   ├── audio
+│   │   │   ├── metadata.go      # Gets audio info via FFprobe
+│   │   │   ├── processor.go     # Converts audio via FFmpeg
+│   │   │   └── reader.go        # Reads audio files
+│   │   ├── config.go            # App settings
+│   │   ├── fingerprint
+│   │   │   ├── generator.go     # Orchestrates fingerprinting
+│   │   │   ├── hasher.go        # Creates hashes from peaks
+│   │   │   ├── peaks.go         # Finds peaks in spectrum
+│   │   │   └── spectrogram.go   # Builds time-frequency map
+│   │   ├── interfaces.go        # Defines contracts
+│   │   ├── service.go           # Main business logic
+│   │   ├── storage
+│   │   │   └── sqlite.go        # Talks to database
+│   │   ├── storage_adapter.go   # Bridges interfaces
+│   │   └── types.go             # Core data structures
+│   ├── logger
+│   │   └── logger.go            # Logging helper
+│   ├── models
+│   │   ├── api.go               # HTTP request/response shapes
+│   │   ├── database.go          # Database table structures
+│   │   └── domain.go            # Business objects
+│   └── utils
+│       ├── crypto.go            # Hashing helpers
+│       ├── files.go             # File operations
+│       ├── uuid.go              # Unique ID generator
+│       └── youtube.go           # Downloads with yt-dlp
+├── README.md
+├── refrence_scripts
+│   ├── download_yt.go           # Example YouTube downloader
+│   └── make-spectorgram.go      # Example spectrogram maker
+├── scripts
+│   └── build-wasm.sh            # Compiles to WebAssembly
+├── test/
+├── wasm
+│   └── acousticdna.wasm
+└── web
+    ├── public
+    │   ├── fingerprint.wasm     # Browser-side processor
+    │   ├── index.html           # The web interface
+    │   ├── wasm_exec.js         # Go's WASM glue code
+    │   └── wasm.js              # Loads the WASM module
+    └── src
+        └── api
+            └── wasm.js          # JS wrapper for WASM calls
 ```
 
 ---
@@ -456,7 +458,6 @@ AcousticDNA/
 
 - SQLite allows only one writer at a time
 - Wait for current operation to complete
-
 
 ## 📚 References
 
