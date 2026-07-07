@@ -295,15 +295,22 @@ curl -X POST http://localhost:8080/api/songs/youtube \
 ## 🏢 Project Structure
 
 ```
-├── acousticdna.sqlite3          # Fingerprint database
+├── acousticdna.sqlite3          # Fingerprint database (tracked via Git LFS)
+├── Dockerfile                   # Multi-stage build (static ffmpeg + yt-dlp)
+├── docker-compose.yml           # Run: docker compose up
+├── docker-compose.prod.yml      # Hardened overlay (read-only, cap-drop)
+├── .dockerignore
+├── .gitattributes               # Git LFS tracking (*.sqlite3)
+├── CLAUDE.md                    # Guidance for AI coding agents
 ├── cmd
 │   ├── cli
 │   │   └── main.go              # Terminal commands (add/match/list)
 │   ├── server
 │   │   ├── handlers.go          # What happens when API called
 │   │   ├── main.go              # Starts the HTTP server
+│   │   ├── main_test.go
 │   │   ├── routes.go            # Maps URLs to handlers
-│   │   └── types.go             # Server data structures
+│   │   └── routes_test.go
 │   └── wasm
 │       └── main.go              # Runs in browser
 ├── go.mod
@@ -311,50 +318,48 @@ curl -X POST http://localhost:8080/api/songs/youtube \
 ├── pkg
 │   ├── acousticdna
 │   │   ├── audio
-│   │   │   ├── metadata.go      # Gets audio info via FFprobe
-│   │   │   ├── processor.go     # Converts audio via FFmpeg
-│   │   │   └── reader.go        # Reads audio files
-│   │   ├── config.go            # App settings
+│   │   │   ├── processor.go     # Converts audio via FFmpeg + yt-dlp download
+│   │   │   ├── processor_test.go
+│   │   │   └── reader.go        # Reads WAV files
+│   │   ├── config.go            # App settings (functional options)
 │   │   ├── fingerprint
-│   │   │   ├── generator.go     # Orchestrates fingerprinting
-│   │   │   ├── hasher.go        # Creates hashes from peaks
+│   │   │   ├── generator.go     # Orchestrates fingerprinting + voting
+│   │   │   ├── generator_test.go
+│   │   │   ├── hasher.go        # Creates 32-bit hashes from peaks
 │   │   │   ├── peaks.go         # Finds peaks in spectrum
-│   │   │   └── spectrogram.go   # Builds time-frequency map
-│   │   ├── interfaces.go        # Defines contracts
+│   │   │   └── spectrogram.go   # STFT time-frequency map
+│   │   ├── interfaces.go        # Service + Storage contracts
 │   │   ├── service.go           # Main business logic
+│   │   ├── service_test.go
 │   │   ├── storage
-│   │   │   └── sqlite.go        # Talks to database
-│   │   ├── storage_adapter.go   # Bridges interfaces
-│   │   └── types.go             # Core data structures
+│   │   │   └── sqlite.go        # gorm + SQLite persistence
+│   │   └── storage_adapter.go   # Bridges DBClient to Storage interface
 │   ├── logger
 │   │   └── logger.go            # Logging helper
 │   ├── models
-│   │   ├── api.go               # HTTP request/response shapes
-│   │   ├── database.go          # Database table structures
-│   │   └── domain.go            # Business objects
+│   │   ├── api.go               # HTTP request/response DTOs
+│   │   ├── database.go          # Couple / Match domain types
+│   │   └── domain.go            # Song / MatchResult
 │   └── utils
-│       ├── crypto.go            # Hashing helpers
 │       ├── files.go             # File operations
-│       ├── uuid.go              # Unique ID generator
-│       └── youtube.go           # Downloads with yt-dlp
+│       ├── uuid.go              # UUID v4 generator
+│       └── youtube.go           # YouTube URL parsing
 ├── README.md
-├── refrence_scripts
-│   ├── download_yt.go           # Example YouTube downloader
-│   └── make-spectorgram.go      # Example spectrogram maker
+├── refrence_scripts             # Standalone examples (//go:build ignore)
+│   ├── download_yt.go
+│   └── make-spectorgram.go
 ├── scripts
 │   └── build-wasm.sh            # Compiles to WebAssembly
-├── test/
-├── wasm
-│   └── acousticdna.wasm
+├── test/                        # Sample audio + spectrograms
 └── web
     ├── public
     │   ├── fingerprint.wasm     # Browser-side processor
-    │   ├── index.html           # The web interface
+    │   ├── index.html           # Web interface (single file)
     │   ├── wasm_exec.js         # Go's WASM glue code
-    │   └── wasm.js              # Loads the WASM module
+    │   └── wasm.js              # Loads + drives the WASM module
     └── src
         └── api
-            └── wasm.js          # JS wrapper for WASM calls
+            └── wasm.js          # (legacy JS wrapper)
 ```
 
 ---
