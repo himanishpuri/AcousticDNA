@@ -105,101 +105,46 @@ cd web && npx serve public
 
 ### System Overview
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      CLIENT OPTIONS                          │
-├─────────────────────────────────────────────────────────────┤
-│                                                               │
-│  Option 1: CLI Tool (Local)                                 │
-│  ┌─────────────────┐                                        │
-│  │ ./acousticdna   │ → Direct database access              │
-│  │ add/match/list  │                                        │
-│  └─────────────────┘                                        │
-│                                                               │
-│  Option 2: WASM Frontend (Privacy-Preserving)              │
-│  ┌─────────────────┐                                        │
-│  │   Browser       │                                        │
-│  │  ┌──────────┐   │                                        │
-│  │  │   WASM   │───┼─→ Hashes only (14 KB)                │
-│  │  │Processing│   │   Audio never uploaded!               │
-│  │  └──────────┘   │                                        │
-│  └─────────────────┘                                        │
-│                                                               │
-│  Option 3: Traditional Upload                               │
-│  ┌─────────────────┐                                        │
-│  │   Browser       │                                        │
-│  │  Upload file    │───→ Full audio file (3 MB)            │
-│  └─────────────────┘                                        │
-│                                                               │
-└──────────────────┬──────────────────────────────────────────┘
-                   │
-                   ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    BACKEND SERVER (Go)                       │
-├─────────────────────────────────────────────────────────────┤
-│                                                               │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │  REST API    │  │  Fingerprint │  │   Database   │      │
-│  │  Handlers    │─→│  Processor   │─→│   (SQLite)   │      │
-│  └──────────────┘  └──────────────┘  └──────────────┘      │
-│                                                               │
-│  Endpoints:                                                  │
-│  • POST /api/match/hashes  ← WASM hashes                   │
-│  • POST /api/match         ← File upload                    │
-│  • POST /api/songs         ← Add song                       │
-│  • GET  /api/songs         ← List songs                     │
-│                                                               │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph clients["Client options"]
+        CLI["CLI tool (local)<br/>add · match · list"]
+        WASM["Browser + WASM<br/>hashes only, ~14 KB<br/>audio never uploaded"]
+        UP["Browser upload<br/>full audio file"]
+    end
+
+    subgraph server["Backend server (Go)"]
+        API["REST API handlers"]
+        FP["Fingerprint processor"]
+        DB[("SQLite<br/>hash → songID, anchorTimeMs")]
+        API --> FP --> DB
+    end
+
+    CLI -->|"direct DB access"| DB
+    WASM -->|"POST /api/match/hashes"| API
+    UP -->|"POST /api/match · /api/songs"| API
 ```
 
 ### Audio Processing Flow
 
-```
-┌─────────────────┐
-│  Input Audio    │  (MP3, WAV, FLAC, etc.)
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│ FFmpeg Convert  │  → Mono 16-bit PCM @ 11,025 Hz
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  STFT + Peaks   │  → Spectrogram → Constellation Points
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  Fingerprints   │  → Combinatorial Hashes (32-bit)
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│ SQLite Storage  │  → hash → (songID, anchorTimeMs)
-└─────────────────┘
+```mermaid
+flowchart TD
+    A["Input audio<br/>MP3 · WAV · FLAC · …"]
+    B["FFmpeg convert<br/>mono 16-bit PCM @ 11,025 Hz"]
+    C["STFT + peaks<br/>spectrogram → constellation points"]
+    D["Fingerprints<br/>combinatorial 32-bit hashes"]
+    E[("SQLite storage<br/>hash → songID, anchorTimeMs")]
+    A --> B --> C --> D --> E
 ```
 
 ### Matching Algorithm
 
-```
-Query Audio → Fingerprints → Database Lookup
-                                   │
-                                   ▼
-                         Time-Offset Voting
-                         ┌─────────────────┐
-                         │ For each match: │
-                         │ offset = db_time│
-                         │        - query  │
-                         │ votes[song][off]│
-                         │        += 1     │
-                         └────────┬────────┘
-                                  │
-                                  ▼
-                         Rank by Max Votes
-                                  │
-                                  ▼
-                           Top Matches 🎯
+```mermaid
+flowchart TD
+    Q["Query audio"] --> F["Fingerprints"] --> L["Database lookup"]
+    L --> V["Time-offset voting<br/>offset = db_time − query_time<br/>votes[song][offset] += 1"]
+    V --> R["Rank by max votes"]
+    R --> T["Top matches 🎯"]
 ```
 
 ---
