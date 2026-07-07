@@ -1,0 +1,26 @@
+# Canonical "run it" + "test in Docker" entrypoint.
+#   docker compose up --build            -> build + run on http://localhost:8080
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d   -> hardened
+services:
+  server:
+    build:
+      context: .
+      target: runtime
+    image: acousticdna:latest
+    ports:
+      - "8080:8080"
+    environment:
+      # PORT moves both the server bind and the HEALTHCHECK together.
+      PORT: 8080
+      ACOUSTIC_DB_PATH: /data/acousticdna.sqlite3
+      ACOUSTIC_TEMP_DIR: /tmp
+    volumes:
+      # Named volume: the SQLite fingerprint DB persists across restarts.
+      - acousticdna-data:/data
+    # Server writes transcode scratch WAVs here; keep it off the image layer.
+    tmpfs:
+      - /tmp
+    restart: unless-stopped
+
+volumes:
+  acousticdna-data:
