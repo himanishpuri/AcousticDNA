@@ -27,19 +27,7 @@ func (s *storageAdapter) RegisterSong(title, artist, youtubeID string, durationM
 }
 
 func (s *storageAdapter) StoreFingerprints(fingerprints map[uint32][]models.Couple) error {
-	// Convert Couple to models.Couple
-	modelFPs := make(map[uint32][]models.Couple)
-	for hash, couples := range fingerprints {
-		modelCouples := make([]models.Couple, len(couples))
-		for i, c := range couples {
-			modelCouples[i] = models.Couple{
-				SongID:       c.SongID,
-				AnchorTimeMs: c.AnchorTimeMs,
-			}
-		}
-		modelFPs[hash] = modelCouples
-	}
-	return s.db.StoreFingerprints(modelFPs)
+	return s.db.StoreFingerprints(fingerprints)
 }
 
 func (s *storageAdapter) GetCouplesByHash(hash uint32) ([]models.Couple, error) {

@@ -283,11 +283,11 @@ curl -X POST http://localhost:8080/api/songs/youtube \
 
 ### Environment Variables
 
-| Variable            | Default               | Description               |
-| ------------------- | --------------------- | ------------------------- |
-| `ACOUSTIC_DB_PATH`  | `acousticdna.sqlite3` | SQLite database file path |
-| `ACOUSTIC_TEMP_DIR` | `/tmp`                | Temporary file directory  |
-| `PORT`              | `8080`                | HTTP server port          |
+| Variable            | Default               | Description                                          |
+| ------------------- | --------------------- | ---------------------------------------------------- |
+| `ACOUSTIC_DB_PATH`  | `acousticdna.sqlite3` | SQLite database file path                            |
+| `ACOUSTIC_TEMP_DIR` | `/tmp`                | Temporary file directory                             |
+| `PORT`              | `8080`                | HTTP server port (overridden by `-port` flag if set) |
 
 ### CLI Flags
 

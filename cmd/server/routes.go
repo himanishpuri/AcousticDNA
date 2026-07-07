@@ -1,9 +1,14 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net/http"
+	"os/signal"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/himanishpuri/AcousticDNA/pkg/logger"
 )
@@ -11,7 +16,6 @@ import (
 func (s *Server) setupRoutes() http.Handler {
 	mux := http.NewServeMux()
 
-	// Serve static web files
 	fs := http.FileServer(http.Dir("./web/public"))
 	mux.Handle("/", fs)
 
@@ -28,8 +32,7 @@ func (s *Server) setupRoutes() http.Handler {
 	mux.HandleFunc("/api/match", s.handleMatch)
 	mux.HandleFunc("/api/match/hashes", s.handleMatchHashesRoute)
 
-	// Wrap with CORS middleware
-	return corsMiddleware(s.config.AllowedOrigins)(mux)
+	return corsMiddleware(s.config.AllowedOrigins)(loggingMiddleware(mux))
 }
 
 func corsMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
@@ -45,6 +48,7 @@ func corsMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
 				for _, allowedOrigin := range allowedOrigins {
 					if allowedOrigin == origin {
 						w.Header().Set("Access-Control-Allow-Origin", origin)
+						w.Header().Add("Vary", "Origin")
 						allowed = true
 						break
 					}
@@ -55,7 +59,6 @@ func corsMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
 				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 				w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
 				w.Header().Set("Access-Control-Max-Age", "3600")
-				w.Header().Set("Access-Control-Allow-Credentials", "true")
 			}
 
 			if r.Method == "OPTIONS" {
@@ -117,9 +120,6 @@ func getClientIP(r *http.Request) string {
 func (s *Server) Start() error {
 	handler := s.setupRoutes()
 
-	// Optionally wrap with logging middleware
-	// handler = loggingMiddleware(handler)
-
 	addr := fmt.Sprintf(":%d", s.config.Port)
 	s.log.Infof("🚀 AcousticDNA server starting on %s", addr)
 	s.log.Infof("   Database: %s", s.config.DBPath)
@@ -136,5 +136,33 @@ func (s *Server) Start() error {
 	s.log.Infof("   POST   /api/match               - Match audio file")
 	s.log.Infof("   POST   /api/match/hashes        - Match pre-computed hashes (WASM)")
 
-	return http.ListenAndServe(addr, handler)
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       5 * time.Minute,
+		IdleTimeout:       120 * time.Second,
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	serveErr := make(chan error, 1)
+	go func() {
+		serveErr <- srv.ListenAndServe()
+	}()
+
+	select {
+	case err := <-serveErr:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	case <-ctx.Done():
+		stop()
+		s.log.Infof("Shutdown signal received, draining connections...")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		return srv.Shutdown(shutdownCtx)
+	}
 }

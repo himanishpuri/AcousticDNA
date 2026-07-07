@@ -27,7 +27,6 @@ type MatchHashesRequest struct {
 // ToHashMap converts the string-keyed hash map to uint32-keyed map
 func (r *MatchHashesRequest) ToHashMap() (map[uint32]uint32, error) {
 	result := make(map[uint32]uint32, len(r.Hashes))
-	invalidCount := 0
 
 	for hashStr, anchorTime := range r.Hashes {
 		// Parse string key as uint32
@@ -37,19 +36,12 @@ func (r *MatchHashesRequest) ToHashMap() (map[uint32]uint32, error) {
 		}
 		hash := uint32(hash64)
 
-		// Validate the hash format and skip invalid ones
+		// Skip invalid hashes instead of failing the entire request
 		if !IsValidHash(hash) {
-			invalidCount++
-			// Skip invalid hashes instead of failing the entire request
 			continue
 		}
 
 		result[hash] = anchorTime
-	}
-
-	// Log if we skipped invalid hashes
-	if invalidCount > 0 {
-		fmt.Printf("Warning: Skipped %d invalid hashes out of %d total\n", invalidCount, len(r.Hashes))
 	}
 
 	// If all hashes were invalid, that's an error
@@ -91,12 +83,6 @@ func IsValidHash(hash uint32) bool {
 	// Note: In rare cases, bin 0 (DC component) might be used, so we allow it
 	// if the other frequency is valid
 	if anchorFreq == 0 && targetFreq == 0 {
-		return false
-	}
-
-	// Frequencies should fit within FFT bin range (0-511 for 9 bits)
-	// This is implicitly true due to the bitmask, but we add the check for clarity
-	if anchorFreq > 511 || targetFreq > 511 {
 		return false
 	}
 

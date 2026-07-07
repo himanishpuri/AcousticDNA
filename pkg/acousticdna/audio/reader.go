@@ -90,8 +90,22 @@ func readFmtChunk(f *os.File, chunkSize uint32) (*WavFormat, error) {
 	}, nil
 }
 
-// readDataChunk reads the data chunk and returns raw PCM data
+// readDataChunk reads the data chunk and returns raw PCM data. The declared
+// chunkSize is untrusted, so it is bounded against the bytes actually remaining
+// in the file before allocating to avoid a huge (~4 GiB) make on a bogus header.
 func readDataChunk(f *os.File, chunkSize uint32) ([]byte, error) {
+	pos, err := f.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return nil, fmt.Errorf("locating data chunk offset: %w", err)
+	}
+	info, err := f.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("stating WAV file: %w", err)
+	}
+	if remaining := info.Size() - pos; int64(chunkSize) > remaining {
+		return nil, fmt.Errorf("data chunk size %d exceeds remaining file bytes %d", chunkSize, remaining)
+	}
+
 	dataChunk := make([]byte, chunkSize)
 	if _, err := io.ReadFull(f, dataChunk); err != nil {
 		return nil, fmt.Errorf("reading data chunk: %w", err)
@@ -134,11 +148,11 @@ func scanWavChunks(f *os.File) (*WavData, error) {
 
 		switch id {
 		case "fmt ":
-			fmt, err := readFmtChunk(f, chunkSize)
+			fmtChunk, err := readFmtChunk(f, chunkSize)
 			if err != nil {
 				return nil, err
 			}
-			format = *fmt
+			format = *fmtChunk
 			fmtFound = true
 
 		case "data":

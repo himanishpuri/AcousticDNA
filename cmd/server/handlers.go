@@ -121,7 +121,6 @@ func (s *Server) handleGetSong(w http.ResponseWriter, r *http.Request, songID st
 }
 
 func (s *Server) handleDeleteSong(w http.ResponseWriter, r *http.Request, songID string) {
-	// Get song before deleting for response
 	song, err := s.service.GetSongByID(songID)
 	if err != nil {
 		s.log.Warnf("Song not found for deletion: %s", songID)
@@ -195,7 +194,7 @@ func (s *Server) handleAddSongFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.log.Infof("Successfully added song: %s by %s (ID: %d)", title, artist, songID)
+	s.log.Infof("Successfully added song: %s by %s (ID: %s)", title, artist, songID)
 	s.respondJSON(w, http.StatusCreated, models.AddSongResponse{
 		Message:   "Song added successfully",
 		ID:        songID,
@@ -260,7 +259,7 @@ func (s *Server) handleAddSongYouTube(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.log.Infof("Successfully added song from YouTube: %s by %s (ID: %d)", title, artist, songID)
+	s.log.Infof("Successfully added song from YouTube: %s by %s (ID: %s)", title, artist, songID)
 	s.respondJSON(w, http.StatusCreated, models.AddSongResponse{
 		Message:   "Song added successfully from YouTube",
 		ID:        songID,
@@ -281,7 +280,6 @@ func (s *Server) handleMatchFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get uploaded file
 	file, header, err := r.FormFile("audio")
 	if err != nil {
 		s.log.Errorf("Failed to get audio file: %v", err)
@@ -290,7 +288,6 @@ func (s *Server) handleMatchFile(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	// Save to temporary file
 	tempFile := filepath.Join(s.config.TempDir, fmt.Sprintf("query_%d_%s", time.Now().UnixNano(), header.Filename))
 	out, err := os.Create(tempFile)
 	if err != nil {
@@ -316,7 +313,6 @@ func (s *Server) handleMatchFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Convert to DTOs
 	matchDTOs := make([]models.MatchResultDTO, len(matches))
 	for i, match := range matches {
 		matchDTOs[i] = models.MatchResultDTO{
@@ -375,7 +371,6 @@ func (s *Server) handleMatchHashes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Convert to DTOs
 	matchDTOs := make([]models.MatchResultDTO, len(matches))
 	for i, match := range matches {
 		matchDTOs[i] = models.MatchResultDTO{

@@ -1,0 +1,41 @@
+# Keep the build context small and NEVER copy the 91MB DB into a layer.
+
+# VCS
+.git
+.gitignore
+
+# Committed SQLite DB (~91MB) — stays a runtime VOLUME, never a layer.
+*.sqlite3
+*.sqlite3-journal
+*.sqlite3-wal
+*.db
+
+# Locally built binaries (rebuilt inside the image).
+/server
+/cli
+*.wasm
+
+# Audio / image fixtures.
+*.wav
+*.png
+
+# Scratch, tests, and one-off scripts not needed at runtime.
+test/
+wasm/
+refrence_scripts/
+scripts/
+
+# Secrets / env.
+.env
+.env.*
+
+# Tooling & editor state.
+.serena/
+.fastcontext/
+.vscode/
+.idea/
+*.log
+
+# Docker files themselves.
+Dockerfile
+.dockerignore

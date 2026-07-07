@@ -1,1 +1,14 @@
+# Secrets
 .env
+
+# Compiled binaries (root-anchored: must NOT match cmd/server, cmd/cli source dirs)
+/server
+/cli
+/acousticDNA
+
+# Runtime / scratch
+/tmp/
+
+# Local tool caches
+.serena/
+.fastcontext/

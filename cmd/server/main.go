@@ -7,6 +7,7 @@ import (
 	"flag"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/himanishpuri/AcousticDNA/pkg/acousticdna"
@@ -21,7 +22,7 @@ var (
 )
 
 func init() {
-	flag.IntVar(&port, "port", 8080, "HTTP server port")
+	flag.IntVar(&port, "port", getEnvIntOrDefault("PORT", 8080), "HTTP server port")
 	flag.StringVar(&dbPath, "db", getEnvOrDefault("ACOUSTIC_DB_PATH", "acousticdna.sqlite3"), "Path to SQLite database")
 	flag.StringVar(&tempDir, "temp", getEnvOrDefault("ACOUSTIC_TEMP_DIR", "/tmp"), "Temporary directory")
 	flag.IntVar(&sampleRate, "rate", 11025, "Audio sample rate")
@@ -31,6 +32,15 @@ func init() {
 func getEnvOrDefault(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
+	}
+	return defaultValue
+}
+
+func getEnvIntOrDefault(key string, defaultValue int) int {
+	if value := os.Getenv(key); value != "" {
+		if n, err := strconv.Atoi(value); err == nil {
+			return n
+		}
 	}
 	return defaultValue
 }

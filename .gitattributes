@@ -1,0 +1,9 @@
+# Large binaries tracked via Git LFS (requires git-lfs in every clone/CI/Docker checkout).
+# Going-forward only: history is NOT rewritten (gated on human sign-off).
+*.sqlite3 filter=lfs diff=lfs merge=lfs -text
+
+# NOTE (open question, NOT yet decided): fixture LFS for test WAV/PNG.
+# If approved, add PATH-SCOPED globs — never bare *.wav / *.png (those would turn a
+# future web/public/*.png served asset into an LFS pointer on any git-lfs-less clone):
+#   test/**/*.wav filter=lfs diff=lfs merge=lfs -text
+#   test/**/*.png filter=lfs diff=lfs merge=lfs -text

@@ -17,17 +17,19 @@ import (
 	"github.com/himanishpuri/AcousticDNA/pkg/utils"
 )
 
+// defaultSampleRate is fixed and not user-settable: added songs and queries
+// must be fingerprinted at the same rate or they will never match (invariant #3).
+const defaultSampleRate = 11025
+
 // Global flags
 var (
-	dbPath     string
-	tempDir    string
-	sampleRate int
+	dbPath  string
+	tempDir string
 )
 
 func init() {
 	flag.StringVar(&dbPath, "db", getEnvOrDefault("ACOUSTIC_DB_PATH", "acousticdna.sqlite3"), "Path to the SQLite database file")
 	flag.StringVar(&tempDir, "temp", getEnvOrDefault("ACOUSTIC_TEMP_DIR", "/tmp"), "Directory for temporary audio conversion files")
-	flag.IntVar(&sampleRate, "rate", 11025, "Audio sample rate for processing")
 }
 
 func getEnvOrDefault(key, defaultValue string) string {
@@ -41,23 +43,22 @@ func createService() (acousticdna.Service, error) {
 	return acousticdna.NewService(
 		acousticdna.WithDBPath(dbPath),
 		acousticdna.WithTempDir(tempDir),
-		acousticdna.WithSampleRate(sampleRate),
+		acousticdna.WithSampleRate(defaultSampleRate),
 	)
 }
 
 func main() {
-	// Initialize logger
 	log := logger.GetLogger()
 
-	// Print banner
 	printBanner()
 
-	if len(os.Args) < 2 {
+	flag.Parse()
+	if flag.NArg() < 1 {
 		printUsage()
 		os.Exit(1)
 	}
 
-	command := os.Args[1]
+	command := flag.Arg(0)
 	log.Infof("Executing command: %s", command)
 
 	switch command {
@@ -92,8 +93,10 @@ func printBanner() {
 func handleAdd() {
 	log := logger.GetLogger()
 
-	// Manually extract audio file and flags
-	args := os.Args[2:]
+	// Split the "add" subcommand args into an optional leading positional file
+	// and the flags, so `add song.wav --title T` works (flags after a positional
+	// stop Go's flag parser).
+	args := flag.Args()[1:]
 	var audioPath string
 	var flagArgs []string
 
@@ -114,6 +117,12 @@ func handleAdd() {
 
 	addCmd.Parse(flagArgs)
 
+	// `add --title T --artist A song.wav`: the file trails the flags, so it is
+	// left over as a positional after flag parsing.
+	if audioPath == "" && addCmd.NArg() > 0 {
+		audioPath = addCmd.Arg(0)
+	}
+
 	var isYouTubeMode bool
 	if *youtubeURL != "" {
 		isYouTubeMode = true
@@ -129,21 +138,9 @@ func handleAdd() {
 		os.Exit(1)
 	}
 
-	var svc acousticdna.Service
-	var err error
-
 	// Handle YouTube download mode
 	if isYouTubeMode {
 		log.Infof("YouTube mode: downloading from URL: %s", *youtubeURL)
-
-		fmt.Println("\n🔧 Initializing service...")
-		svc, err = createService()
-		if err != nil {
-			fmt.Printf("❌ Failed to create service: %v\n", err)
-			log.Errorf("Service initialization failed: %v", err)
-			os.Exit(1)
-		}
-		defer svc.Close()
 
 		fmt.Println("📥 Downloading audio from YouTube...")
 		fmt.Println("   This may take a few moments depending on video length")
@@ -151,8 +148,7 @@ func handleAdd() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 
-		// Download YouTube audio (service will convert to WAV)
-		downloadedPath, ytMeta, err := audio.DownloadYouTubeAudio(ctx, *youtubeURL, tempDir, sampleRate)
+		downloadedPath, ytMeta, err := audio.DownloadYouTubeAudio(ctx, *youtubeURL, tempDir, defaultSampleRate)
 		if err != nil {
 			fmt.Printf("\n❌ Failed to download YouTube video: %v\n", err)
 			log.Errorf("YouTube download failed: %v", err)
@@ -198,16 +194,14 @@ func handleAdd() {
 
 	log.Infof("Adding song: '%s' by '%s' from file: %s", *title, *artist, audioPath)
 
-	if !isYouTubeMode {
-		fmt.Println("\n🔧 Initializing service...")
-		svc, err = createService()
-		if err != nil {
-			fmt.Printf("❌ Failed to create service: %v\n", err)
-			log.Errorf("Service initialization failed: %v", err)
-			os.Exit(1)
-		}
-		defer svc.Close()
+	fmt.Println("\n🔧 Initializing service...")
+	svc, err := createService()
+	if err != nil {
+		fmt.Printf("❌ Failed to create service: %v\n", err)
+		log.Errorf("Service initialization failed: %v", err)
+		os.Exit(1)
 	}
+	defer svc.Close()
 
 	fmt.Println("🎵 Processing audio file...")
 	fmt.Println("   This may take a few moments for large files")
@@ -235,12 +229,12 @@ func handleAdd() {
 func handleMatch() {
 	log := logger.GetLogger()
 
-	if len(os.Args) < 3 {
+	if flag.NArg() < 2 {
 		fmt.Println("Usage: acousticDNA match <audio_file>")
 		os.Exit(1)
 	}
 
-	audioPath := os.Args[2]
+	audioPath := flag.Arg(1)
 	log.Infof("Matching audio file: %s", audioPath)
 
 	fmt.Println("\n🔧 Initializing service...")
@@ -340,12 +334,12 @@ func handleList() {
 func handleDelete() {
 	log := logger.GetLogger()
 
-	if len(os.Args) < 3 {
+	if flag.NArg() < 2 {
 		fmt.Println("Usage: acousticDNA delete <song_id>")
 		os.Exit(1)
 	}
 
-	songID := os.Args[2]
+	songID := flag.Arg(1)
 
 	svc, err := createService()
 	if err != nil {
@@ -381,7 +375,6 @@ func printUsage() {
 	fmt.Println("\nGlobal Options:")
 	fmt.Println("  --db <path>        Path to SQLite database (env: ACOUSTIC_DB_PATH, default: acousticdna.sqlite3)")
 	fmt.Println("  --temp <dir>       Temporary directory for audio conversion (env: ACOUSTIC_TEMP_DIR, default: /tmp)")
-	fmt.Println("  --rate <hz>        Audio sample rate (default: 11025)")
 	fmt.Println("\nUsage:")
 	fmt.Println("  acousticDNA [global-options] add <audio_file> --title <title> --artist <artist> [--youtube <id>]")
 	fmt.Println("  acousticDNA [global-options] add --youtube-url <url> [--title <title>] [--artist <artist>]")
@@ -399,5 +392,5 @@ func printUsage() {
 	fmt.Println("  acousticDNA add --youtube-url \"https://youtu.be/dQw4w9WgXcQ\" --title \"Custom Title\" --artist \"Custom Artist\"")
 	fmt.Println()
 	fmt.Println("  # Match audio file")
-	fmt.Println("  acousticDNA --rate 22050 match query.mp3")
+	fmt.Println("  acousticDNA match query.mp3")
 }

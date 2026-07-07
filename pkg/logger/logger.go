@@ -3,7 +3,6 @@ package logger
 import (
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"runtime"
 	"strings"
@@ -17,6 +16,7 @@ const (
 	DEBUG LogLevel = iota
 	INFO
 	WARN
+	ERROR
 	FATAL
 )
 
@@ -28,6 +28,8 @@ func (l LogLevel) String() string {
 		return "INFO"
 	case WARN:
 		return "WARN"
+	case ERROR:
+		return "ERROR"
 	case FATAL:
 		return "FATAL"
 	default:
@@ -52,7 +54,6 @@ type Logger struct {
 	showCaller bool
 	showTime   bool
 	timeFormat string
-	stdLogger  *log.Logger
 }
 
 var (
@@ -98,7 +99,6 @@ func New(cfg Config) *Logger {
 		showCaller: cfg.ShowCaller,
 		showTime:   cfg.ShowTime,
 		timeFormat: cfg.TimeFormat,
-		stdLogger:  log.New(cfg.Output, cfg.Prefix, 0),
 	}
 }
 
@@ -113,6 +113,8 @@ func GetLogger() *Logger {
 				cfg.Level = INFO
 			case "WARN":
 				cfg.Level = WARN
+			case "ERROR":
+				cfg.Level = ERROR
 			case "FATAL":
 				cfg.Level = FATAL
 			}
@@ -132,7 +134,6 @@ func (l *Logger) SetOutput(w io.Writer) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.out = w
-	l.stdLogger.SetOutput(w)
 }
 
 func (l *Logger) SetColorize(colorize bool) {
@@ -164,7 +165,7 @@ func (l *Logger) formatMessage(level LogLevel, msg string, args ...any) string {
 			levelStr = colorBlue + levelStr + colorReset
 		case WARN:
 			levelStr = colorYellow + levelStr + colorReset
-		case FATAL:
+		case ERROR, FATAL:
 			levelStr = colorRed + levelStr + colorReset
 		}
 	}
@@ -234,9 +235,9 @@ func (l *Logger) Fatal(msg string, args ...any) {
 	l.log(FATAL, msg, args...)
 }
 
-// Error is an alias for Warn for backwards compatibility
+// Error logs a message at ERROR level
 func (l *Logger) Error(msg string, args ...any) {
-	l.log(WARN, msg, args...)
+	l.log(ERROR, msg, args...)
 }
 
 // Debugf logs a formatted message at DEBUG level
@@ -259,9 +260,9 @@ func (l *Logger) Fatalf(format string, args ...any) {
 	l.Fatal(format, args...)
 }
 
-// Errorf is an alias for Warnf
+// Errorf logs a formatted message at ERROR level
 func (l *Logger) Errorf(format string, args ...any) {
-	l.Warnf(format, args...)
+	l.Error(format, args...)
 }
 
 // Package-level convenience functions using the default logger
@@ -286,7 +287,7 @@ func Fatal(msg string, args ...any) {
 	GetLogger().Fatal(msg, args...)
 }
 
-// Error is an alias for Warn using the default logger
+// Error logs an error message using the default logger
 func Error(msg string, args ...any) {
 	GetLogger().Error(msg, args...)
 }
@@ -311,7 +312,7 @@ func Fatalf(format string, args ...any) {
 	GetLogger().Fatalf(format, args...)
 }
 
-// Errorf is an alias for Warnf using the default logger
+// Errorf logs a formatted error message using the default logger
 func Errorf(format string, args ...any) {
 	GetLogger().Errorf(format, args...)
 }

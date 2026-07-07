@@ -96,6 +96,27 @@ func pickArtist(meta YTMetadata) string {
 	return "Unknown Artist"
 }
 
+// ytdlpCommonArgs builds the yt-dlp flags shared by the metadata and download
+// invocations. Machine-specific flags (browser cookies, JS runtime, remote
+// components) are omitted by default so the commands run on a clean host, and
+// are only added when the corresponding env vars are set.
+func ytdlpCommonArgs() []string {
+	args := []string{"--no-warnings", "--no-playlist"}
+	if v := os.Getenv("YTDLP_COOKIES_FROM_BROWSER"); v != "" {
+		args = append(args, "--cookies-from-browser", v)
+	}
+	if v := os.Getenv("YTDLP_JS_RUNTIMES"); v != "" {
+		args = append(args, "--js-runtimes", v)
+	}
+	if v := os.Getenv("YTDLP_REMOTE_COMPONENTS"); v != "" {
+		args = append(args, "--remote-components", v)
+	}
+	if v := os.Getenv("YTDLP_EXTRA_ARGS"); v != "" {
+		args = append(args, strings.Fields(v)...)
+	}
+	return args
+}
+
 func DownloadYouTubeAudio(ctx context.Context, youtubeURL string, outputDir string, sampleRate int) (audioPath string, metadata *YTMetadata, err error) {
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
@@ -112,17 +133,9 @@ func DownloadYouTubeAudio(ctx context.Context, youtubeURL string, outputDir stri
 	}
 
 	// Step 1: Extract metadata using yt-dlp JSON output
-	metaCmd := exec.CommandContext(
-		ctx,
-		"yt-dlp",
-		"-J",                                // Dump JSON metadata
-		"--no-warnings",                     // Suppress warnings
-		"--no-playlist",                     // Don't download playlists
-		"--cookies-from-browser", "firefox", // Use Firefox cookies for authentication
-		"--js-runtimes", "deno", // Use Deno for JavaScript execution
-		"--remote-components", "ejs:github", // Use GitHub for remote components
-		youtubeURL,
-	)
+	metaArgs := append([]string{"-J"}, ytdlpCommonArgs()...)
+	metaArgs = append(metaArgs, youtubeURL)
+	metaCmd := exec.CommandContext(ctx, "yt-dlp", metaArgs...)
 
 	var stdout, stderr bytes.Buffer
 	metaCmd.Stdout = &stdout
@@ -149,26 +162,15 @@ func DownloadYouTubeAudio(ctx context.Context, youtubeURL string, outputDir stri
 		return "", nil, fmt.Errorf("missing title in yt-dlp output")
 	}
 
-	// Set artist using fallback chain if not present
-	if ytMeta.Artist == "" {
-		ytMeta.Artist = pickArtist(ytMeta)
-	}
+	// Set artist using fallback chain (pickArtist returns the existing value if set)
+	ytMeta.Artist = pickArtist(ytMeta)
 
 	// Step 2: Download best audio stream (will be converted to proper WAV by service)
 	outputTemplate := filepath.Join(outputDir, fmt.Sprintf("%s.%%(ext)s", ytMeta.ID))
 
-	downloadCmd := exec.CommandContext(
-		ctx,
-		"yt-dlp",
-		"-f", "ba", // Best audio stream
-		"--no-warnings",                     // Suppress warnings
-		"--no-playlist",                     // Don't download playlists
-		"--cookies-from-browser", "firefox", // Use Firefox cookies for authentication
-		"--js-runtimes", "deno", // Use Deno for JavaScript execution
-		"--remote-components", "ejs:github", // Use GitHub for remote components
-		"-o", outputTemplate, // Output template
-		youtubeURL,
-	)
+	downloadArgs := append([]string{"-f", "ba"}, ytdlpCommonArgs()...)
+	downloadArgs = append(downloadArgs, "-o", outputTemplate, youtubeURL)
+	downloadCmd := exec.CommandContext(ctx, "yt-dlp", downloadArgs...)
 
 	var dlStderr bytes.Buffer
 	downloadCmd.Stderr = &dlStderr

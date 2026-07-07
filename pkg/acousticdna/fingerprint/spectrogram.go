@@ -5,7 +5,6 @@ import (
 	"math"
 	"math/cmplx"
 
-	"github.com/himanishpuri/AcousticDNA/pkg/acousticdna/audio"
 	"github.com/mjibson/go-dsp/fft"
 )
 
@@ -17,19 +16,10 @@ const (
 func Hamming(n int) []float64 {
 	w := make([]float64, n)
 	for i := 0; i < n; i++ {
-		w[i] = 0.54 - 0.46*mathCos(2*mathPi*float64(i)/float64(n-1))
+		w[i] = 0.54 - 0.46*math.Cos(2*math.Pi*float64(i)/float64(n-1))
 	}
 	return w
 }
-
-// small local constants & helpers to avoid importing math multiple times in docs
-const (
-	mathPi = 3.141592653589793
-)
-
-func mathCos(x float64) float64 { return mathCosStd(x) }
-
-func mathCosStd(x float64) float64 { return math.Cos(x) }
 
 func FFTReal(frame []float64) []complex128 {
 	return fft.FFTReal(frame)
@@ -45,7 +35,7 @@ func MagnitudeSpectrum(spectrum []complex128) []float64 {
 	return mag
 }
 
-func STFT(samples []float64, sampleRate, windowSize, hopSize int, window []float64) ([][]float64, error) {
+func STFT(samples []float64, windowSize, hopSize int, window []float64) ([][]float64, error) {
 	if len(window) != windowSize {
 		return nil, errors.New("window length must equal windowSize")
 	}
@@ -66,30 +56,6 @@ func STFT(samples []float64, sampleRate, windowSize, hopSize int, window []float
 		spectrogram = append(spectrogram, mag)
 	}
 	return spectrogram, nil
-}
-
-func ComputeSpectrogram(wavPath string, windowSizeArg, hopSizeArg int) ([][]float64, int, error) {
-	samples, sr, err := audio.ReadWavAsFloat64(wavPath)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	ws := windowSizeArg
-	if ws == 0 {
-		ws = WindowSize
-	}
-	hs := hopSizeArg
-	if hs == 0 {
-		hs = HopSize
-	}
-
-	win := Hamming(ws)
-
-	spectrogram, err := STFT(samples, sr, ws, hs, win)
-	if err != nil {
-		return nil, 0, err
-	}
-	return spectrogram, sr, nil
 }
 
 func ComputeSpectrogramFromSamples(samples []float64, sampleRate, windowSizeArg, hopSizeArg int) ([][]float64, error) {
@@ -115,7 +81,7 @@ func ComputeSpectrogramFromSamples(samples []float64, sampleRate, windowSizeArg,
 
 	win := Hamming(ws)
 
-	spectrogram, err := STFT(samples, sampleRate, ws, hs, win)
+	spectrogram, err := STFT(samples, ws, hs, win)
 	if err != nil {
 		return nil, err
 	}

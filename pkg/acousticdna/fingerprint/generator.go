@@ -28,12 +28,6 @@ func Fingerprint(peaks []Peak, songID string) map[uint32][]models.Couple {
 	return fp
 }
 
-func MergeFingerprints(dst map[uint32][]models.Couple, src map[uint32][]models.Couple) {
-	for k, v := range src {
-		dst[k] = append(dst[k], v...)
-	}
-}
-
 func QueryFingerprints(queryPeaks []Peak, db map[uint32][]models.Couple) []models.Match {
 	sort.Slice(queryPeaks, func(i, j int) bool { return queryPeaks[i].Time < queryPeaks[j].Time })
 

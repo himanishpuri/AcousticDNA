@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"sort"
 
 	"github.com/himanishpuri/AcousticDNA/pkg/acousticdna/audio"
 	"github.com/himanishpuri/AcousticDNA/pkg/acousticdna/fingerprint"
@@ -63,13 +64,13 @@ func (s *acousticService) AddSong(ctx context.Context, audioPath, title, artist,
 		return "", fmt.Errorf("failed to read WAV file: %w", err)
 	}
 
-	spec, _, err := fingerprint.ComputeSpectrogram(wavPath, 0, 0)
+	spec, err := fingerprint.ComputeSpectrogramFromSamples(samples, sampleRate, 0, 0)
 	if err != nil {
 		return "", fmt.Errorf("spectrogram generation failed: %w", err)
 	}
 
 	duration := float64(len(samples)) / float64(sampleRate)
-	peaks := fingerprint.ExtractPeaks(spec, duration, sampleRate)
+	peaks := fingerprint.ExtractPeaks(spec, sampleRate)
 	s.log.Infof("Extracted %d peaks", len(peaks))
 
 	songID, err := s.storage.RegisterSong(title, artist, youtubeID, int(duration*1000))
@@ -80,20 +81,10 @@ func (s *acousticService) AddSong(ctx context.Context, audioPath, title, artist,
 	fps := fingerprint.Fingerprint(peaks, songID)
 	s.log.Infof("Generated %d unique hashes", len(fps))
 
-	storageFPs := make(map[uint32][]models.Couple)
-	for hash, modelCouples := range fps {
-		couples := make([]models.Couple, len(modelCouples))
-		for i, mc := range modelCouples {
-			couples[i] = models.Couple{
-				SongID:       mc.SongID,
-				AnchorTimeMs: mc.AnchorTimeMs,
-			}
+	if err := s.storage.StoreFingerprints(fps); err != nil {
+		if delErr := s.storage.DeleteSongByID(songID); delErr != nil {
+			s.log.Warnf("Failed to roll back song %s after fingerprint store error: %v", songID, delErr)
 		}
-		storageFPs[hash] = couples
-	}
-
-	if err := s.storage.StoreFingerprints(storageFPs); err != nil {
-		s.storage.DeleteSongByID(songID)
 		return "", fmt.Errorf("failed to store fingerprints: %w", err)
 	}
 
@@ -116,13 +107,12 @@ func (s *acousticService) MatchSong(ctx context.Context, audioPath string) ([]mo
 		return nil, fmt.Errorf("failed to read WAV file: %w", err)
 	}
 
-	spec, _, err := fingerprint.ComputeSpectrogram(wavPath, 0, 0)
+	spec, err := fingerprint.ComputeSpectrogramFromSamples(samples, sampleRate, 0, 0)
 	if err != nil {
 		return nil, fmt.Errorf("spectrogram generation failed: %w", err)
 	}
 
-	duration := float64(len(samples)) / float64(sampleRate)
-	queryPeaks := fingerprint.ExtractPeaks(spec, duration, sampleRate)
+	queryPeaks := fingerprint.ExtractPeaks(spec, sampleRate)
 	s.log.Infof("Query has %d peaks", len(queryPeaks))
 
 	queryFPs := fingerprint.Fingerprint(queryPeaks, "")
@@ -146,14 +136,14 @@ func (s *acousticService) MatchSong(ctx context.Context, audioPath string) ([]mo
 	for _, match := range matches {
 		song, err := s.GetSongByID(match.SongID)
 		if err != nil {
-			s.log.Warnf("Failed to get song %d: %v", match.SongID, err)
+			s.log.Warnf("Failed to get song %s: %v", match.SongID, err)
 			continue
 		}
 
 		// Get database song's fingerprint count for better confidence calculation
 		dbFingerprintCount, err := s.storage.GetFingerprintCount(match.SongID)
 		if err != nil {
-			s.log.Warnf("Failed to get fingerprint count for song %d: %v", match.SongID, err)
+			s.log.Warnf("Failed to get fingerprint count for song %s: %v", match.SongID, err)
 			dbFingerprintCount = len(queryFPs)
 		}
 
@@ -237,6 +227,10 @@ func (s *acousticService) MatchHashes(ctx context.Context, hashes map[uint32]uin
 		}
 	}
 
+	// Sort best-first so the WASM /api/match/hashes endpoint returns
+	// deterministic descending-Count order (mirrors QueryFingerprints).
+	sort.Slice(matches, func(i, j int) bool { return matches[i].Count > matches[j].Count })
+
 	s.log.Infof("Found %d candidate matches", len(matches))
 
 	// 5. Convert to results with song metadata
@@ -244,14 +238,14 @@ func (s *acousticService) MatchHashes(ctx context.Context, hashes map[uint32]uin
 	for _, match := range matches {
 		song, err := s.GetSongByID(match.SongID)
 		if err != nil {
-			s.log.Warnf("Failed to get song %d: %v", match.SongID, err)
+			s.log.Warnf("Failed to get song %s: %v", match.SongID, err)
 			continue
 		}
 
 		// Get database song's fingerprint count for confidence calculation
 		dbFingerprintCount, err := s.storage.GetFingerprintCount(match.SongID)
 		if err != nil {
-			s.log.Warnf("Failed to get fingerprint count for song %d: %v", match.SongID, err)
+			s.log.Warnf("Failed to get fingerprint count for song %s: %v", match.SongID, err)
 			dbFingerprintCount = len(hashes) // Fallback
 		}
 
@@ -272,12 +266,9 @@ func (s *acousticService) MatchHashes(ctx context.Context, hashes map[uint32]uin
 	return results, nil
 }
 
-// calculateConfidence computes a more meaningful confidence score.
-// It considers:
-// - Match count (number of aligned fingerprints)
-// - Query size and database song size (uses smaller as reference)
-// - Sigmoid scaling to emphasize strong matches
-// - Statistical significance (minimum threshold)
+// calculateConfidence scores a match (0-100) as a sigmoid over the ratio of
+// aligned fingerprints to the smaller of the query/db sizes, with a boost for
+// strong overlaps and a penalty for statistically weak match counts.
 func (s *acousticService) calculateConfidence(matchCount, queryFPCount, dbFPCount int) float64 {
 	if matchCount == 0 || queryFPCount == 0 || dbFPCount == 0 {
 		return 0.0
@@ -290,39 +281,27 @@ func (s *acousticService) calculateConfidence(matchCount, queryFPCount, dbFPCoun
 		minFPCount = dbFPCount
 	}
 
-	// Base ratio: how many matched out of possible matches
 	ratio := float64(matchCount) / float64(minFPCount)
 
-	// Apply sigmoid-like scaling to make the confidence more meaningful:
-	// - Low matches (< 5% of min): very low confidence (0-20%)
-	// - Medium matches (5-20% of min): medium confidence (20-70%)
-	// - High matches (> 20% of min): high confidence (70-100%)
-
-	// Use a scaled and shifted logistic function
-	// confidence = 100 / (1 + e^(-k*(ratio - threshold)))
-	// Adjusted to give reasonable values
-
 	const (
-		// Steepness of the sigmoid curve
-		steepness = 20.0
-		// Midpoint of the sigmoid (50% confidence point)
-		midpoint = 0.15 // 15% match ratio gives 50% confidence
+		steepness      = 20.0 // slope of the logistic curve
+		midpoint       = 0.15 // ratio that maps to 50% confidence
+		boostThreshold = 0.30 // ratio above which strong matches get a linear boost
+		boostGain      = 50.0 // boost per unit of ratio above boostThreshold
+		minReliable    = 5    // match counts below this are scaled down as unreliable
 	)
 
-	// Sigmoid transformation
+	// Logistic scaling: confidence = 100 / (1 + e^(-steepness*(ratio-midpoint))).
 	exponent := -steepness * (ratio - midpoint)
 	confidence := 100.0 / (1.0 + math.Exp(exponent))
 
-	// Boost confidence for very strong matches (> 30% overlap)
-	if ratio > 0.30 {
-		boost := (ratio - 0.30) * 50 // Additional boost for exceptional matches
+	if ratio > boostThreshold {
+		boost := (ratio - boostThreshold) * boostGain
 		confidence = math.Min(100.0, confidence+boost)
 	}
 
-	// Statistical significance filter: very low match counts are unreliable
-	if matchCount < 5 {
-		// Penalize very low match counts
-		confidence *= float64(matchCount) / 5.0
+	if matchCount < minReliable {
+		confidence *= float64(matchCount) / float64(minReliable)
 	}
 
 	return confidence

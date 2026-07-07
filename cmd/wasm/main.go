@@ -69,14 +69,12 @@ func generateFingerprint(this js.Value, args []js.Value) interface{} {
 		samples = stereoToMono(samples)
 	}
 
-	duration := float64(len(samples)) / float64(sampleRate)
-
 	spec, err := fingerprint.ComputeSpectrogramFromSamples(samples, sampleRate, 0, 0)
 	if err != nil {
 		return makeErrorResponse(ErrorSpectrogramFailed, fmt.Sprintf("Failed to generate spectrogram: %v", err))
 	}
 
-	peaks := fingerprint.ExtractPeaks(spec, duration, sampleRate)
+	peaks := fingerprint.ExtractPeaks(spec, sampleRate)
 	if len(peaks) == 0 {
 		return makeErrorResponse(ErrorPeakExtraction, "No peaks found in audio (audio may be silent or too short)")
 	}

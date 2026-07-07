@@ -13,7 +13,7 @@ type Peak struct {
 	MagDB   float64
 }
 
-func ExtractPeaks(spectrogram [][]float64, audioDuration float64, sampleRate int) []Peak {
+func ExtractPeaks(spectrogram [][]float64, sampleRate int) []Peak {
 	if len(spectrogram) == 0 || len(spectrogram[0]) == 0 {
 		return nil
 	}
@@ -31,9 +31,9 @@ func ExtractPeaks(spectrogram [][]float64, audioDuration float64, sampleRate int
 		eps           = 1e-10
 	)
 
-	bands := [][]int{{0, minInt(10, nBins)}}
+	bands := [][]int{{0, min(10, nBins)}}
 	for start := 10; start < nBins; start *= 2 {
-		end := minInt(start*2, nBins)
+		end := min(start*2, nBins)
 		bands = append(bands, []int{start, end})
 		if end == nBins {
 			break
@@ -136,11 +136,4 @@ func ExtractPeaks(spectrogram [][]float64, audioDuration float64, sampleRate int
 	})
 
 	return peaks
-}
-
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
