@@ -13,14 +13,12 @@ import (
 	"time"
 
 	"github.com/glebarez/sqlite"
-	customlogger "github.com/himanishpuri/AcousticDNA/pkg/logger"
 	"github.com/himanishpuri/AcousticDNA/pkg/models"
 	"github.com/himanishpuri/AcousticDNA/pkg/utils"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
 
-const DefaultDBFile = "acousticdna.sqlite3"
 const errDBClientNil = "db client is nil"
 
 type DBClient struct {
@@ -43,14 +41,6 @@ type Fingerprint struct {
 	Hash         uint32 `gorm:"index:idx_hash" json:"hash"`
 	SongID       string `gorm:"type:varchar(36);index:idx_song" json:"song_id"`
 	AnchorTimeMs uint32 `json:"anchor_time_ms"`
-}
-
-func NewDBClient() (*DBClient, error) {
-	dbPath := os.Getenv("ACOUSTIC_DB_PATH")
-	if dbPath == "" {
-		dbPath = DefaultDBFile
-	}
-	return NewDBClientWithPath(dbPath)
 }
 
 func NewDBClientWithPath(dbPath string) (*DBClient, error) {
@@ -177,21 +167,6 @@ func (c *DBClient) StoreFingerprints(fp map[uint32][]models.Couple) error {
 	return nil
 }
 
-func (c *DBClient) GetCouplesByHash(hash uint32) ([]models.Couple, error) {
-	if c == nil || c.DB == nil {
-		return nil, errors.New(errDBClientNil)
-	}
-	var rows []Fingerprint
-	if err := c.DB.Where("hash = ?", hash).Find(&rows).Error; err != nil {
-		return nil, fmt.Errorf("querying fingerprints: %w", err)
-	}
-	out := make([]models.Couple, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, models.Couple{SongID: r.SongID, AnchorTimeMs: r.AnchorTimeMs})
-	}
-	return out, nil
-}
-
 func (c *DBClient) GetCouplesByHashes(hashes []uint32) (map[uint32][]models.Couple, error) {
 	if c == nil || c.DB == nil {
 		return nil, errors.New(errDBClientNil)
@@ -219,45 +194,4 @@ func (c *DBClient) GetCouplesByHashes(hashes []uint32) (map[uint32][]models.Coup
 	}
 
 	return result, nil
-}
-
-// QueryTopMatches is a convenience wrapper that fetches all couple lists for query hashes and
-// performs in-memory voting. It expects queryHashes in the same packed form your hash.go creates.
-// This mirrors earlier QueryFingerprints logic but uses the DB for bucket lookup.
-func (c *DBClient) QueryTopMatches(queryHashes []uint32) ([]models.Match, error) {
-	// Efficient lookup: fetch buckets for each hash and perform voting
-	votes := make(map[string]map[int32]int)
-
-	for _, h := range queryHashes {
-		var rows []Fingerprint
-		if err := c.DB.Where("hash = ?", h).Find(&rows).Error; err != nil {
-			return nil, fmt.Errorf("querying hash %d: %w", h, err)
-		}
-		for _, r := range rows {
-			// We cannot compute offset here because we need query anchor times.
-			// This helper assumes calling code tracks query anchor times and computes offsets.
-			// For convenience, we return a map-like structure via GetCouplesByHash in the other method.
-			m := votes[r.SongID]
-			if m == nil {
-				m = make(map[int32]int)
-				votes[r.SongID] = m
-			}
-			// placeholder: we don't have query time here; caller should compute offsets.
-			// store counts keyed by offset if computed in caller.
-			_ = m
-		}
-	}
-	// This function is intentionally left limited — prefer using GetCouplesByHash and doing
-	// the offset voting in your existing in-memory code for flexibility.
-	return nil, fmt.Errorf("QueryTopMatches is a partial helper; use GetCouplesByHash + in-memory voting")
-}
-
-// Convenience: helper to build a DB client and log errors. Use utils.GetLogger if needed.
-func MustNewDBClient() *DBClient {
-	cli, err := NewDBClient()
-	if err != nil {
-		customlogger.GetLogger().Error("failed to open DB: %v", err)
-		panic(err)
-	}
-	return cli
 }

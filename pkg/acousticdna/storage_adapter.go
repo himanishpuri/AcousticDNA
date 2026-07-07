@@ -30,23 +30,6 @@ func (s *storageAdapter) StoreFingerprints(fingerprints map[uint32][]models.Coup
 	return s.db.StoreFingerprints(fingerprints)
 }
 
-func (s *storageAdapter) GetCouplesByHash(hash uint32) ([]models.Couple, error) {
-	modelCouples, err := s.db.GetCouplesByHash(hash)
-	if err != nil {
-		return nil, err
-	}
-
-	// Convert models.Couple to Couple
-	couples := make([]models.Couple, len(modelCouples))
-	for i, mc := range modelCouples {
-		couples[i] = models.Couple{
-			SongID:       mc.SongID,
-			AnchorTimeMs: mc.AnchorTimeMs,
-		}
-	}
-	return couples, nil
-}
-
 func (s *storageAdapter) GetCouplesByHashes(hashes []uint32) (map[uint32][]models.Couple, error) {
 	return s.db.GetCouplesByHashes(hashes)
 }

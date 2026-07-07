@@ -19,7 +19,6 @@ type Service interface {
 type Storage interface {
 	RegisterSong(title, artist, youtubeID string, durationMs int) (string, error)
 	StoreFingerprints(fingerprints map[uint32][]models.Couple) error
-	GetCouplesByHash(hash uint32) ([]models.Couple, error)
 	GetCouplesByHashes(hashes []uint32) (map[uint32][]models.Couple, error)
 	DeleteSongByID(songID string) error
 	GetSongByID(songID string) (*models.Song, error)

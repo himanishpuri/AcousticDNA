@@ -48,13 +48,3 @@ func ExtractYouTubeID(youtubeURL string) (string, error) {
 
 	return "", fmt.Errorf("unable to extract video ID from URL: %s", youtubeURL)
 }
-
-func IsYouTubeURL(urlStr string) bool {
-	u, err := url.Parse(urlStr)
-	if err != nil {
-		return false
-	}
-
-	host := strings.ToLower(u.Host)
-	return strings.Contains(host, "youtube.com") || strings.Contains(host, "youtu.be")
-}

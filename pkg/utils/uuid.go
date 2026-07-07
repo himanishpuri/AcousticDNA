@@ -11,7 +11,6 @@ func GenerateUUID() string {
 	b := make([]byte, 16)
 	_, err := rand.Read(b)
 	if err != nil {
-		// Fallback to timestamp-based generation if crypto/rand fails
 		panic(fmt.Sprintf("failed to generate UUID: %v", err))
 	}
 
