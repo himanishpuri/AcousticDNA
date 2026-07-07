@@ -41,6 +41,7 @@ func getEnvIntOrDefault(key string, defaultValue int) int {
 		if n, err := strconv.Atoi(value); err == nil {
 			return n
 		}
+		log.Printf("warning: %s=%q is not a valid integer; using default %d", key, value, defaultValue)
 	}
 	return defaultValue
 }
