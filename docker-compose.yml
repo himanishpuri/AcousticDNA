@@ -14,12 +14,19 @@ services:
       PORT: 8080
       ACOUSTIC_DB_PATH: /data/acousticdna.sqlite3
       ACOUSTIC_TEMP_DIR: /tmp
+      # YouTube blocks yt-dlp's default client from datacenter IPs (EC2, CI,
+      # cloud) with "not available on this app". android_vr authenticates AND
+      # serves downloadable audio without cookies. Override if YouTube shifts:
+      #   YTDLP_EXTRA_ARGS='--extractor-args youtube:player_client=<client>' docker compose up
+      YTDLP_EXTRA_ARGS: ${YTDLP_EXTRA_ARGS:---extractor-args youtube:player_client=android_vr}
     volumes:
       # Named volume: the SQLite fingerprint DB persists across restarts.
       - acousticdna-data:/data
     # Server writes transcode scratch WAVs here; keep it off the image layer.
+    # exec is required: the static yt-dlp binary self-extracts to /tmp and
+    # maps shared libs from there, which a default (noexec) tmpfs blocks.
     tmpfs:
-      - /tmp
+      - /tmp:exec
     restart: unless-stopped
 
 volumes:
