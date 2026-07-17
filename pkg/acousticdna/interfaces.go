@@ -12,6 +12,7 @@ type Service interface {
 	MatchHashes(ctx context.Context, hashes map[uint32]uint32) ([]models.MatchResult, error)
 	GetSongByID(songID string) (*models.Song, error)
 	ListSongs() ([]models.Song, error)
+	CountFingerprints() (int64, error)
 	DeleteSong(songID string) error
 	Close() error
 }
@@ -22,7 +23,7 @@ type Storage interface {
 	GetCouplesByHashes(hashes []uint32) (map[uint32][]models.Couple, error)
 	DeleteSongByID(songID string) error
 	GetSongByID(songID string) (*models.Song, error)
-	GetFingerprintCount(songID string) (int, error)
+	GetTotalFingerprintCount() (int64, error)
 	ListSongs() ([]models.Song, error)
 	Close() error
 }

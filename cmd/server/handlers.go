@@ -70,11 +70,19 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Total fingerprint rows across all songs. Non-fatal: on error report 0
+	// rather than failing the whole metrics endpoint.
+	fpCount, err := s.service.CountFingerprints()
+	if err != nil {
+		s.log.Warnf("Failed to count fingerprints: %v", err)
+	}
+
 	s.respondJSON(w, http.StatusOK, models.MetricsResponse{
-		Status:       "healthy",
-		DatabasePath: s.config.DBPath,
-		SongCount:    len(songs),
-		SampleRate:   s.config.SampleRate,
+		Status:           "healthy",
+		DatabasePath:     s.config.DBPath,
+		SongCount:        len(songs),
+		FingerprintCount: fpCount,
+		SampleRate:       s.config.SampleRate,
 	})
 }
 

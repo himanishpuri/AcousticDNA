@@ -61,14 +61,23 @@ func QueryFingerprints(queryPeaks []Peak, db map[uint32][]models.Couple) []model
 	for songID, offsets := range votes {
 		bestOffset := int32(0)
 		bestCount := 0
+		secondBest := 0
 		for off, cnt := range offsets {
 			if cnt > bestCount {
+				secondBest = bestCount
 				bestCount = cnt
 				bestOffset = off
+			} else if cnt > secondBest {
+				secondBest = cnt
 			}
 		}
 		if bestCount > 0 {
-			matches = append(matches, models.Match{SongID: songID, OffsetMs: bestOffset, Count: bestCount})
+			matches = append(matches, models.Match{
+				SongID:          songID,
+				OffsetMs:        bestOffset,
+				Count:           bestCount,
+				SecondBestCount: secondBest,
+			})
 		}
 	}
 

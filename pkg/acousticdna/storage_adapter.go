@@ -53,12 +53,12 @@ func (s *storageAdapter) GetSongByID(songID string) (*models.Song, error) {
 	}, nil
 }
 
-func (s *storageAdapter) GetFingerprintCount(songID string) (int, error) {
+func (s *storageAdapter) GetTotalFingerprintCount() (int64, error) {
 	var count int64
-	if err := s.db.DB.Model(&storage.Fingerprint{}).Where("song_id = ?", songID).Count(&count).Error; err != nil {
+	if err := s.db.DB.Model(&storage.Fingerprint{}).Count(&count).Error; err != nil {
 		return 0, err
 	}
-	return int(count), nil
+	return count, nil
 }
 
 func (s *storageAdapter) ListSongs() ([]models.Song, error) {

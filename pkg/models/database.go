@@ -11,5 +11,9 @@ type Couple struct {
 type Match struct {
 	SongID   string // UUID of the song
 	OffsetMs int32  // dbAnchorTimeMs - queryAnchorTimeMs
-	Count    int
+	Count    int    // votes at the winning time offset (peak bin)
+	// SecondBestCount is the votes at this song's second-tallest offset bin.
+	// A sharp peak (Count >> SecondBestCount) signals a real alignment;
+	// a flat distribution signals noise. Used for confidence scoring.
+	SecondBestCount int
 }

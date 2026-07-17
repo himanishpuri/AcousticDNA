@@ -63,10 +63,12 @@ func TestQueryFingerprints(t *testing.T) {
 
 	matches := QueryFingerprints(qp, db)
 
+	// A's decoy vote at offset 100 is the second-tallest bin -> SecondBestCount 1.
+	// C and B each have a single coherent offset -> SecondBestCount 0.
 	want := []models.Match{
-		{SongID: "A", OffsetMs: 5000, Count: 4},
-		{SongID: "C", OffsetMs: 7000, Count: 3},
-		{SongID: "B", OffsetMs: 3000, Count: 2},
+		{SongID: "A", OffsetMs: 5000, Count: 4, SecondBestCount: 1},
+		{SongID: "C", OffsetMs: 7000, Count: 3, SecondBestCount: 0},
+		{SongID: "B", OffsetMs: 3000, Count: 2, SecondBestCount: 0},
 	}
 
 	if len(matches) != len(want) {

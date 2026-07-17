@@ -133,21 +133,14 @@ func (s *acousticService) MatchSong(ctx context.Context, audioPath string) ([]mo
 	s.log.Infof("Found %d candidate matches", len(matches))
 
 	results := make([]models.MatchResult, 0, len(matches))
-	for _, match := range matches {
+	for i, match := range matches {
 		song, err := s.GetSongByID(match.SongID)
 		if err != nil {
 			s.log.Warnf("Failed to get song %s: %v", match.SongID, err)
 			continue
 		}
 
-		// Get database song's fingerprint count for better confidence calculation
-		dbFingerprintCount, err := s.storage.GetFingerprintCount(match.SongID)
-		if err != nil {
-			s.log.Warnf("Failed to get fingerprint count for song %s: %v", match.SongID, err)
-			dbFingerprintCount = len(queryFPs)
-		}
-
-		confidence := s.calculateConfidence(match.Count, len(queryFPs), dbFingerprintCount)
+		confidence := s.calculateConfidence(match.Count, match.SecondBestCount, competingScore(matches, i))
 
 		results = append(results, models.MatchResult{
 			SongID:     match.SongID,
@@ -205,24 +198,30 @@ func (s *acousticService) MatchHashes(ctx context.Context, hashes map[uint32]uin
 		}
 	}
 
-	// 4. Find the best (most voted) offset for each song
+	// 4. Find the best (most voted) offset for each song, plus the runner-up
+	// bin (peak sharpness signal). Mirrors QueryFingerprints exactly.
 	matches := make([]models.Match, 0)
 	for songID, offsetVotes := range votes {
 		bestOffset := int32(0)
 		bestCount := 0
+		secondBest := 0
 
 		for offset, count := range offsetVotes {
 			if count > bestCount {
+				secondBest = bestCount
 				bestCount = count
 				bestOffset = offset
+			} else if count > secondBest {
+				secondBest = count
 			}
 		}
 
 		if bestCount > 0 {
 			matches = append(matches, models.Match{
-				SongID:   songID,
-				OffsetMs: bestOffset,
-				Count:    bestCount,
+				SongID:          songID,
+				OffsetMs:        bestOffset,
+				Count:           bestCount,
+				SecondBestCount: secondBest,
 			})
 		}
 	}
@@ -235,21 +234,14 @@ func (s *acousticService) MatchHashes(ctx context.Context, hashes map[uint32]uin
 
 	// 5. Convert to results with song metadata
 	results := make([]models.MatchResult, 0, len(matches))
-	for _, match := range matches {
+	for i, match := range matches {
 		song, err := s.GetSongByID(match.SongID)
 		if err != nil {
 			s.log.Warnf("Failed to get song %s: %v", match.SongID, err)
 			continue
 		}
 
-		// Get database song's fingerprint count for confidence calculation
-		dbFingerprintCount, err := s.storage.GetFingerprintCount(match.SongID)
-		if err != nil {
-			s.log.Warnf("Failed to get fingerprint count for song %s: %v", match.SongID, err)
-			dbFingerprintCount = len(hashes) // Fallback
-		}
-
-		confidence := s.calculateConfidence(match.Count, len(hashes), dbFingerprintCount)
+		confidence := s.calculateConfidence(match.Count, match.SecondBestCount, competingScore(matches, i))
 
 		results = append(results, models.MatchResult{
 			SongID:     match.SongID,
@@ -266,42 +258,63 @@ func (s *acousticService) MatchHashes(ctx context.Context, hashes map[uint32]uin
 	return results, nil
 }
 
-// calculateConfidence scores a match (0-100) as a sigmoid over the ratio of
-// aligned fingerprints to the smaller of the query/db sizes, with a boost for
-// strong overlaps and a penalty for statistically weak match counts.
-func (s *acousticService) calculateConfidence(matchCount, queryFPCount, dbFPCount int) float64 {
-	if matchCount == 0 || queryFPCount == 0 || dbFPCount == 0 {
+// competingScore returns the best vote count among songs OTHER than the one at
+// index i, given matches sorted by Count desc. For the top match that is the
+// runner-up (matches[1]); for any lower match it is the leader (matches[0]).
+// Used as the cross-song separation signal in calculateConfidence.
+func competingScore(matches []models.Match, i int) int {
+	if len(matches) < 2 {
+		return 0
+	}
+	if i == 0 {
+		return matches[1].Count
+	}
+	return matches[0].Count
+}
+
+// calculateConfidence scores a match (0-100) from the two signals that actually
+// distinguish a true hit from noise, independent of query/song length:
+//
+//   - peakiness: how much the winning time-offset bin dominates the song's
+//     second-tallest bin. A real match spikes at one offset (bestCount >>
+//     secondBest); noise scatters votes across offsets (bestCount ~= secondBest).
+//   - margin: how far this song's score beats the best competing song. A
+//     confident hit stands out from the field; ambiguous noise ties with it.
+//
+// The old model (matchCount / total-query-hashes through a sigmoid) is abandoned:
+// aligned votes are always a tiny fraction of total hashes, so every match —
+// true or false — collapsed to the sigmoid floor (~5%).
+func (s *acousticService) calculateConfidence(bestCount, secondBestOffsetCount, competing int) float64 {
+	if bestCount == 0 {
 		return 0.0
 	}
 
-	// Use the minimum fingerprint count as the reference
-	// This ensures fair comparison between short queries and long songs
-	minFPCount := queryFPCount
-	if dbFPCount < minFPCount {
-		minFPCount = dbFPCount
+	best := float64(bestCount)
+	peakiness := 1.0 - float64(secondBestOffsetCount)/best // 1 = single dominant offset
+	if peakiness < 0 {
+		peakiness = 0
+	}
+	margin := (best - float64(competing)) / best // 1 = no competing song
+	if margin < 0 {
+		margin = 0
 	}
 
-	ratio := float64(matchCount) / float64(minFPCount)
-
+	// Equal blend of the two signals, spread across 0-100 by a logistic centered
+	// where a clearly separated, peaked match sits well above a flat/tied one.
 	const (
-		steepness      = 20.0 // slope of the logistic curve
-		midpoint       = 0.15 // ratio that maps to 50% confidence
-		boostThreshold = 0.30 // ratio above which strong matches get a linear boost
-		boostGain      = 50.0 // boost per unit of ratio above boostThreshold
-		minReliable    = 5    // match counts below this are scaled down as unreliable
+		steepness = 9.0  // slope
+		midpoint  = 0.35 // blended-signal value mapping to 50%
 	)
+	signal := 0.5*peakiness + 0.5*margin
+	confidence := 100.0 / (1.0 + math.Exp(-steepness*(signal-midpoint)))
 
-	// Logistic scaling: confidence = 100 / (1 + e^(-steepness*(ratio-midpoint))).
-	exponent := -steepness * (ratio - midpoint)
-	confidence := 100.0 / (1.0 + math.Exp(exponent))
-
-	if ratio > boostThreshold {
-		boost := (ratio - boostThreshold) * boostGain
-		confidence = math.Min(100.0, confidence+boost)
-	}
-
-	if matchCount < minReliable {
-		confidence *= float64(matchCount) / float64(minReliable)
+	// Absolute-reliability floor: a handful of votes can't be highly confident
+	// no matter how peaked/separated. Quadratic so a 2-3 vote spurious hit is
+	// strongly damped even when it happens to be peaked with no competitor.
+	const minReliable = 8
+	if bestCount < minReliable {
+		f := float64(bestCount) / float64(minReliable)
+		confidence *= f * f
 	}
 
 	return confidence
@@ -315,6 +328,11 @@ func (s *acousticService) GetSongByID(songID string) (*models.Song, error) {
 // ListSongs returns all songs in the database.
 func (s *acousticService) ListSongs() ([]models.Song, error) {
 	return s.storage.ListSongs()
+}
+
+// CountFingerprints returns the total number of stored fingerprint rows.
+func (s *acousticService) CountFingerprints() (int64, error) {
+	return s.storage.GetTotalFingerprintCount()
 }
 
 // DeleteSong removes a song and all its fingerprints from the database.
