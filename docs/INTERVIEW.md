@@ -284,3 +284,116 @@ compiles to WASM. That dual-target reuse is the architectural payoff.
 | Schema, batched insert, batched lookup         | `pkg/acousticdna/storage/sqlite.go`          |
 | CLI / REST / WASM entry points                 | `cmd/cli`, `cmd/server`, `cmd/wasm`          |
 | Browser-side WASM glue                         | `web/public/wasm.js`                         |
+
+---
+
+## 9. Deeper probes (the follow-up questions)
+
+These are the second-layer questions a strong interviewer asks to test _depth_. Every
+answer below is grounded in the actual code.
+
+### 9.1 Complexity — what's the Big-O of a match?
+
+- **Fingerprint the query:** `O(P·F)` — P peaks × FanOut 6 pair attempts.
+- **Retrieval:** one indexed `hash IN (…)` → roughly `O(H·log N)` on the B-tree
+  (`idx_hash`), H = distinct query hashes (~3.8K for a 15 s clip).
+- **Voting:** `O(C)` — C = total (queryHash, dbRow) collisions retrieved.
+- **Ranking:** `O(M log M)`, M = candidate songs (tiny).
+- **No `O(#songs)` scan** — the hash index prunes; the DB never iterates songs. That's
+  the whole point of the inverted-hash design.
+
+### 9.2 Why 11,025 Hz specifically? (`cmd/cli` `defaultSampleRate = 11025`)
+
+Nyquist: the max representable frequency is `sampleRate/2 ≈ 5.5 kHz`. Nearly all musical
+_fundamentals and lower harmonics_ — the part that identifies a song — live below ~5 kHz.
+So 11,025 Hz keeps the discriminative content while being **4× smaller than CD (44.1 kHz)**:
+less compute in the FFT, fewer samples, smaller DB. Higher rates waste work on
+high-frequency detail that noise/compression destroys anyway; lower rates start eating
+into musical structure. It's a deliberate accuracy/cost trade. (Both add and query use the
+same rate — non-negotiable, or the frequency-bin math wouldn't line up.)
+
+### 9.3 Hash collisions & false positives — aren't 32 bits too few?
+
+Collisions are **expected and harmless by design**. Two unrelated peak-pairs hashing to the
+same 32-bit value just append two `Couple{SongID, AnchorTimeMs}` entries to that bucket
+(`sqlite.go StoreFingerprints`). At match time _all_ couples for a hash vote. A spurious
+collision lands at a **random** time offset; the true song's collisions all land at the
+**same** offset. So false hits scatter across the offset histogram and the real match spikes
+in one bin — **time-coherence voting is the collision filter**. This is why we never rely on
+raw hash-match _count_; we rely on offset _concentration_ (peakiness) — see §4.
+
+### 9.4 How do peaks survive MP3 / a phone mic?
+
+Lossy codecs (MP3/AAC) use _perceptual_ coding: they discard what humans can't hear —
+masked and quiet components — and preserve the perceptually dominant spectral energy. The
+**loudest bin per band** (exactly what `ExtractPeaks` keeps) is precisely what survives.
+Noise and cheap mics corrupt _weak_ components; the peaks stay. And the threshold is
+**relative to each frame's own average** (`minDbAboveAvg = 3.0` dB), so overall volume /
+gain shifts don't move which peaks get picked.
+
+### 9.5 Scale & memory — how big can this go?
+
+Rough per-song cost: `frames × peaks/frame × FanOut` rows. A 3-min track ≈ tens of
+thousands of `Fingerprint` rows (the live demo DB: **22 songs → ~822K rows → 91 MB**, so
+~37K rows/song average). That extrapolates to ~**GBs at 10K+ songs** — SQLite handles it but
+slows, and `hash IN (…)` has a practical size ceiling. **Where I'd take it next:** an
+in-memory inverted index `hash → []SongID` (Redis) or a sharded store, to drop the per-query
+DB round trip. Query-side memory is trivial (~tens of KB of hashes).
+
+### 9.6 Why SQLite (not Redis / a real inverted index)?
+
+Deliberate for this scope: **zero-config, embeddable, single-file, pure-Go driver
+(`glebarez/sqlite`) → no CGO → static binary + WASM code reuse.** For a demo/small catalog
+it's plenty and it keeps deployment trivial (drop the `.sqlite3` file in the container). The
+honest limitation: it's a _row store queried by an index_, not a purpose-built inverted
+index — hence §9.5. Knowing _when_ the current choice breaks is the point.
+
+### 9.7 The two-implementation invariant (the subtle risk)
+
+The offset vote exists **twice**: `QueryFingerprints` (native, `generator.go`) and the inline
+loop in `MatchHashes` (`service.go`, the WASM entry point). They must produce identical
+`Match{Count, SecondBestCount, OffsetMs}`. Today they're kept in lockstep by hand + tests;
+**the clean fix is to extract one shared vote function** — call that out proactively as known
+tech debt, it reads as maturity.
+
+### 9.8 Concurrency
+
+Per-request work (STFT → peaks → hash → vote) is sequential and CPU-bound. Concurrency is at
+the **server** layer: the SQLite pool caps at `SetMaxOpenConns(25)` (`sqlite.go`), so ~25
+requests run in parallel; graceful shutdown uses a background goroutine (`routes.go`).
+Obvious parallelism _not yet exploited_ (and a good "what would you optimize" answer): STFT
+frames are independent → parallelizable; the query-hash set could be chunked across workers.
+
+### 9.9 FFmpeg / yt-dlp dependency & failure modes
+
+Both are shelled out via `exec.CommandContext` (`audio/processor.go`) — so they inherit the
+request's context/timeout. Failure modes: binary missing from PATH, unsupported codec, or a
+geo-blocked/unavailable video → non-zero exit, surfaced as a wrapped error (`AddSong`/
+`MatchSong` fail loudly, no silent fallback). yt-dlp path: `-J` for metadata JSON first, then
+download; title/artist fall back to YouTube metadata when not supplied.
+
+### 9.10 AddSong atomicity
+
+If fingerprint storage fails after the song row is created, `AddSong` **rolls back** by
+deleting the song (`service.go` — `DeleteSongByID` on store error), so a half-added song
+can't linger. `RegisterSong` is **idempotent** on `(title, artist)` — re-adding returns the
+existing ID instead of duplicating.
+
+### 9.11 Testing strategy
+
+Real tests in the repo: `fingerprint/generator_test.go` (hashing + voting), `service_test.go`
+(the confidence model — locks exact values, monotonicity, thresholds), `audio/processor_test.go`
+(yt-dlp arg building), `cmd/server/routes_test.go` (endpoints), and `perf_test.go` (the
+measured bandwidth + batched-lookup benchmark, skips without the real DB/ffmpeg). **What I'd
+add:** adversarial robustness (noise injection, near-duplicate songs) and a native-vs-WASM
+equivalence test to enforce §9.7.
+
+### 9.12 Honest limitations (say these before you're asked)
+
+- **No pitch/tempo invariance** — a cover, a live version, or a sped-up upload won't match.
+  Inherent to exact-hash matching (Shazam has the same limit). Fixing it needs a fundamentally
+  different feature (e.g. chroma/CQT).
+- **Params are hand-tuned constants**, not learned per corpus.
+- **SQLite ceiling** at large catalogs (§9.5–9.6).
+- **Confidence is a heuristic** (peakiness + margin + a quadratic low-count floor), not a
+  calibrated probability. It separates true from noise well; it isn't a real posterior.

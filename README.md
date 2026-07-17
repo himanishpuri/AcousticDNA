@@ -109,7 +109,7 @@ cd web && npx serve public
 flowchart TD
     subgraph clients["Client options"]
         CLI["CLI tool (local)<br/>add · match · list"]
-        WASM["Browser + WASM<br/>hashes only, ~14 KB<br/>audio never uploaded"]
+        WASM["Browser + WASM<br/>hashes only, ~61 KB<br/>audio never uploaded"]
         UP["Browser upload<br/>full audio file"]
     end
 
@@ -195,7 +195,7 @@ Reproduce via `go test ./pkg/acousticdna -run TestPerfClaims -v`.
 
 ### 5. Time-Coherence Voting
 
-- Query hashes against database (batch SQL query for 10-100x speedup)
+- Query hashes against database in a single batched, indexed lookup (`hash IN (...)`)
 - Calculate time offsets: `offset = db_time - query_time`
 - Vote for song/offset pairs
 - Return matches ranked by vote count (confidence score)
@@ -220,7 +220,7 @@ _Frequency vs. Time representation showing spectral characteristics. Brighter re
 
 ```bash
 # CLI
-./acousticDNA youtube "https://youtube.com/watch?v=dQw4w9WgXcQ"
+./acousticDNA add --youtube-url "https://youtube.com/watch?v=dQw4w9WgXcQ"
 
 # API
 curl -X POST http://localhost:8080/api/songs/youtube \
@@ -238,7 +238,7 @@ curl -X POST http://localhost:8080/api/songs/youtube \
 
 - **Client-side processing**: Audio fingerprinting in browser
 - **Privacy preservation**: Only hashes sent to server (not audio)
-- **Bandwidth optimization**: 14 KB vs 3 MB (99.5% reduction)
+- **Bandwidth optimization**: ~61 KB vs 3.74 MB (~98% reduction, measured — see Performance)
 
 ---
 
@@ -275,38 +275,6 @@ curl -X POST http://localhost:8080/api/songs/youtube \
 | **Window Size**     | 1024 samples | STFT frame length            |
 | **Hop Size**        | 256 samples  | 75% overlap                  |
 | **Window Function** | Hamming      | 0.54 - 0.46×cos(2πn/(N-1))   |
-
----
-
-## 📊 Performance
-
-### Matching Speed
-
-| Database Size | Hashes/Query | Query Time | Accuracy |
-| ------------- | ------------ | ---------- | -------- |
-| 100 songs     | ~10,000      | 50-100ms   | 95%+     |
-| 1,000 songs   | ~10,000      | 200-400ms  | 90%+     |
-| 10,000 songs  | ~10,000      | 1-2s       | 85%+     |
-
-### Audio Processing
-
-| Duration | Samples   | Hashes  | Processing Time |
-| -------- | --------- | ------- | --------------- |
-| 10s      | 441,000   | ~1,200  | 500-800ms       |
-| 30s      | 1,323,000 | ~3,600  | 1.5-2.5s        |
-| 3min     | 7,938,000 | ~21,600 | 8-12s           |
-
-### Batch Hash Retrieval Optimization
-
-- **Old (N queries)**: 10,000 hashes × 2ms = **20 seconds**
-- **New (1 query)**: 10,000 hashes = **50-200ms**
-- **Improvement**: **10-100x faster**
-
-### Privacy-Preserving Mode
-
-- **Traditional upload**: 3 MB audio file
-- **WASM hash upload**: 14 KB hashes
-- **Bandwidth reduction**: **99.5%**
 
 ---
 
@@ -394,8 +362,8 @@ curl -X POST http://localhost:8080/api/songs/youtube \
 ### Privacy Design
 
 - Optional client-side processing via WebAssembly
-- Only cryptographic hashes transmitted to server
-- Server cannot reconstruct original audio from hashes
+- Only compact fingerprint hashes transmitted to server (not audio)
+- Hashes are lossy spectral-peak descriptors — original audio cannot be reconstructed from them
 
 ### Engineering Practices
 
