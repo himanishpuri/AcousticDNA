@@ -140,8 +140,10 @@ This is the heart of the algorithm and the most-asked part.
 1. Fingerprint the **query** the same way → set of query hashes, each with its own
    `queryAnchorTime`.
 2. **One batched SQL query**: `GetCouplesByHashes(hashList)` → `WHERE hash IN (...)`
-   pulls every DB row matching any query hash in a single round trip. (This is the
-   "60× speedup" on the resume — vs. one SELECT per hash.)
+   pulls every DB row matching any query hash in a single round trip, vs. one SELECT
+   per hash. Measured ~3× faster locally on the 822K-row demo DB; the gap widens with
+   real per-query network latency and larger catalogs. (Do **not** claim a fixed
+   multiplier in an interview — it depends entirely on the baseline.)
 3. For every (queryHash, dbRow) collision, compute
    **`offset = dbAnchorTimeMs − queryAnchorTimeMs`** and tally votes per song:
    `votes[songID][offset]++`.
@@ -204,8 +206,9 @@ The differentiator on the resume. Two ways to match from the browser:
 
 Why this is a real win, not a gimmick:
 
-- **Bandwidth (~99.5% reduction):** a raw 15 s WAV is megabytes; the hash map is a few
-  KB of integers. You ship fingerprints, not audio.
+- **Bandwidth (~98% reduction, measured):** a real 15 s WAV is ~3.7 MB; the hash map is
+  ~61 KB of integers (measured on the test clip, 3,795 hashes). You ship fingerprints,
+  not audio. Scales higher for longer/lossless sources.
 - **Privacy:** the raw recording never leaves the device — only opaque hashes do.
 - **Code reuse:** the DSP is compiled once, run in two environments. This forces a
   **build-tag discipline** — `pkg/acousticdna/fingerprint` and `pkg/models` must compile

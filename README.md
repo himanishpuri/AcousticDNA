@@ -149,6 +149,24 @@ flowchart TD
 
 ---
 
+## 📊 Performance
+
+Measured against the demo database (**91 MB**, ~822K fingerprint rows, 22 songs) with a
+real ~15 s query clip (`test/testCroppedAudio/bruatiful_test.wav`, 11,025 Hz mono WAV).
+Reproduce via `go test ./pkg/acousticdna -run TestPerfClaims -v`.
+
+| Metric                     | Measured                       | Notes                                                                                                                                                                    |
+| -------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Bandwidth (WASM path)**  | **~98% reduction**             | 3.74 MB raw WAV → ~61 KB hash payload (3,795 hashes). Only fingerprint hashes cross the wire; audio never leaves the browser.                                            |
+| **Query fingerprint size** | ~3.8K hashes / clip            | Compact `uint32` hashes + anchor times.                                                                                                                                  |
+| **DB retrieval**           | single batched `hash IN (...)` | One indexed round trip (`idx_hash`) replaces N per-hash queries — ~3× faster locally on this DB, and the gap widens with network round-trip latency and larger catalogs. |
+| **Match latency**          | sub-second                     | Full match (retrieval + offset voting) over 822K rows completes in well under a second.                                                                                  |
+
+> Bandwidth reduction scales with clip length and source format — a longer or lossless
+> source pushes it higher; the number above is for this specific test clip.
+
+---
+
 ## 🔬 How It Works
 
 ### 1. Audio Preprocessing
