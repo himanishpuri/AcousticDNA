@@ -283,8 +283,8 @@ curl -X POST http://localhost:8080/api/songs/youtube \
 ```
 ├── acousticdna.sqlite3          # Fingerprint database (tracked via Git LFS)
 ├── Dockerfile                   # Multi-stage build (static ffmpeg + yt-dlp)
-├── docker-compose.yml           # Run: docker compose up
-├── docker-compose.prod.yml      # Hardened overlay (read-only, cap-drop)
+├── docker-compose.yml           # Run: docker compose up (hardened: read-only rootfs, cap-drop, seeds empty volume)
+├── docker-entrypoint.sh         # Seeds fresh /data volume from bind-mounted db on first boot
 ├── .dockerignore
 ├── .gitattributes               # Git LFS tracking (*.sqlite3)
 ├── CLAUDE.md                    # Guidance for AI coding agents

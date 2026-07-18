@@ -90,6 +90,8 @@ RUN useradd --system --create-home --uid 10001 appuser \
 WORKDIR /app
 COPY --from=builder /out/server     /app/server
 COPY --from=builder /out/web-public /app/web/public
+COPY docker-entrypoint.sh /app/entrypoint.sh
+RUN chmod 0755 /app/entrypoint.sh
 
 # DB is a runtime volume - never baked into a layer. PORT is honored by the
 # server (main.go reads it) and the HEALTHCHECK below, so `-e PORT=...` moves both.
@@ -103,4 +105,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD wget -qO- "http://localhost:${PORT}/health" || exit 1
 
 USER appuser
-ENTRYPOINT ["/app/server"]
+ENTRYPOINT ["/app/entrypoint.sh"]

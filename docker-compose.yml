@@ -1,12 +1,21 @@
 # Canonical "run it" + "test in Docker" entrypoint.
-#   docker compose up --build            -> build + run on http://localhost:8080
-#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d   -> hardened
+#   docker compose up --build   -> build + run on http://localhost:8080
 services:
   server:
     build:
       context: .
       target: runtime
     image: acousticdna:latest
+    read_only: true # immutable rootfs; all writes go to declared mounts (/data, /tmp)
+    security_opt:
+      - no-new-privileges:true # block setuid privilege escalation
+    cap_drop:
+      - ALL # server binds 8080 (>1024) + needs no Linux caps
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
     ports:
       - "8080:8080"
     environment:
@@ -22,6 +31,10 @@ services:
     volumes:
       # Named volume: the SQLite fingerprint DB persists across restarts.
       - acousticdna-data:/data
+      # Read-only seed: entrypoint copies this into the volume above ONLY on
+      # first boot (empty volume). Requires `git lfs pull` locally, otherwise
+      # it's an LFS pointer and the entrypoint skips seeding (starts empty).
+      - ./acousticdna.sqlite3:/seed/acousticdna.sqlite3:ro
     # Server writes transcode scratch WAVs here; keep it off the image layer.
     # exec is required: the static yt-dlp binary self-extracts to /tmp and
     # maps shared libs from there, which a default (noexec) tmpfs blocks.
