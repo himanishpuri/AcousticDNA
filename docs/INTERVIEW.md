@@ -82,7 +82,7 @@ This is where most of the "cleverness" lives. Naive "pick the N loudest bins" bi
 toward bass and loud sections. Instead:
 
 - **Logarithmic frequency bands.** Bins split into bands `[0,10), [10,20), [20,40),
-[40,80), …` (each band doubles). This mirrors human hearing (log-frequency) and
+  [40,80), …` (each band doubles). This mirrors human hearing (log-frequency) and
   guarantees high frequencies get represented even though they carry less energy.
 - **One candidate per band per frame** — the strongest bin in each band.
 - **Adaptive threshold.** A candidate is kept only if its magnitude (in dB) is at least
