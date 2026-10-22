@@ -5,7 +5,7 @@ import (
 	"math"
 	"math/cmplx"
 
-	"github.com/mjibson/go-dsp/fft"
+	"github.com/madelynnblue/go-dsp/fft"
 )
 
 const (

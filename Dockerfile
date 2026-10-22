@@ -3,7 +3,7 @@
 ############################
 # Stage 1 - Go builder
 ############################
-FROM golang:1.25.5-bookworm AS builder
+FROM golang:1.26.10-bookworm AS builder
 
 WORKDIR /src
 
@@ -61,7 +61,7 @@ RUN apt-get update \
 FROM debian:bookworm-slim AS runtime
 
 # Bump to match the yt-dlp version pinned by ws5.
-ARG YTDLP_VERSION=2025.06.30
+ARG YTDLP_VERSION=2026.10.21
 # Auto-populated by BuildKit from the target platform (amd64 or arm64).
 ARG TARGETARCH
 
