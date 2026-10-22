@@ -22,7 +22,7 @@ func NewSQLiteStorage(dbPath string) (Storage, error) {
 	return &storageAdapter{db: db}, nil
 }
 
-func (s *storageAdapter) RegisterSong(title, artist, youtubeID string, durationMs int) (string, error) {
+func (s *storageAdapter) RegisterSong(title, artist, youtubeID string, durationMs int) (string, bool, error) {
 	return s.db.RegisterSong(title, artist, youtubeID, durationMs)
 }
 

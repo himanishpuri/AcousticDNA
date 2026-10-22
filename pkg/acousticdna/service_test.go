@@ -4,11 +4,55 @@
 package acousticdna
 
 import (
+	"context"
 	"math"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"testing"
 
 	"github.com/himanishpuri/AcousticDNA/pkg/models"
 )
+
+// TestAddSongTwiceKeepsOneFingerprintSet guards against re-adding an existing
+// (title, artist) storing its fingerprints again, which inflates match votes.
+func TestAddSongTwiceKeepsOneFingerprintSet(t *testing.T) {
+	clip := filepath.Join("..", "..", "test", "testCroppedAudio", "bruatiful_test.wav")
+	if _, err := os.Stat(clip); err != nil {
+		t.Skipf("fixture missing: %v", err)
+	}
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not on PATH")
+	}
+
+	tmp := t.TempDir()
+	svc, err := NewService(WithDBPath(filepath.Join(tmp, "db.sqlite3")), WithTempDir(tmp))
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+	defer svc.Close()
+
+	ctx := context.Background()
+	id1, err := svc.AddSong(ctx, clip, "Song", "Artist", "")
+	if err != nil {
+		t.Fatalf("first AddSong: %v", err)
+	}
+	n1, err := svc.CountFingerprints()
+	if err != nil || n1 == 0 {
+		t.Fatalf("after first add: count=%d err=%v", n1, err)
+	}
+
+	id2, err := svc.AddSong(ctx, clip, "Song", "Artist", "")
+	if err != nil {
+		t.Fatalf("second AddSong: %v", err)
+	}
+	if id2 != id1 {
+		t.Errorf("re-add returned ID %q, want existing %q", id2, id1)
+	}
+	if n2, _ := svc.CountFingerprints(); n2 != n1 {
+		t.Errorf("fingerprints after re-add = %d, want %d (no duplicates)", n2, n1)
+	}
+}
 
 // TestCalculateConfidence locks the confidence model. Inputs are
 // (bestCount, secondBestOffsetCount, competingSongScore); expected values are

@@ -18,7 +18,8 @@ type Service interface {
 }
 
 type Storage interface {
-	RegisterSong(title, artist, youtubeID string, durationMs int) (string, error)
+	// RegisterSong returns created=false when (title, artist) already exists.
+	RegisterSong(title, artist, youtubeID string, durationMs int) (songID string, created bool, err error)
 	StoreFingerprints(fingerprints map[uint32][]models.Couple) error
 	GetCouplesByHashes(hashes []uint32) (map[uint32][]models.Couple, error)
 	DeleteSongByID(songID string) error

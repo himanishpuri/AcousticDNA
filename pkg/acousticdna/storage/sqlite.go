@@ -83,26 +83,28 @@ func (c *DBClient) Close() error {
 	return c.db.Close()
 }
 
-func (c *DBClient) RegisterSong(title, artist, youtubeID string, durationMs int) (string, error) {
+// RegisterSong returns the song ID for (title, artist), creating the row when
+// absent. created is false when the song already existed.
+func (c *DBClient) RegisterSong(title, artist, youtubeID string, durationMs int) (id string, created bool, err error) {
 	if c == nil || c.DB == nil {
-		return "", errors.New(errDBClientNil)
+		return "", false, errors.New(errDBClientNil)
 	}
 
 	var song Song
 
-	err := c.DB.Where("title = ? AND artist = ?", title, artist).First(&song).Error
+	err = c.DB.Where("title = ? AND artist = ?", title, artist).First(&song).Error
 	if err == nil {
 		if song.YouTubeID == "" && youtubeID != "" {
 			if err := c.DB.Model(&song).Update("YouTubeID", youtubeID).Error; err != nil {
-				return "", fmt.Errorf("updating youtube_id: %w", err)
+				return "", false, fmt.Errorf("updating youtube_id: %w", err)
 			}
 			song.YouTubeID = youtubeID
 		}
-		return song.ID, nil
+		return song.ID, false, nil
 	}
 
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return "", fmt.Errorf("querying existing song: %w", err)
+		return "", false, fmt.Errorf("querying existing song: %w", err)
 	}
 
 	uuid := utils.GenerateUUID()
@@ -113,14 +115,14 @@ func (c *DBClient) RegisterSong(title, artist, youtubeID string, durationMs int)
 			(err.Error() != "" && (strings.Contains(err.Error(), "UNIQUE constraint failed") ||
 				strings.Contains(err.Error(), "constraint failed"))) {
 			if fetchErr := c.DB.Where("title = ? AND artist = ?", title, artist).First(&song).Error; fetchErr != nil {
-				return "", fmt.Errorf("fetching song after constraint violation: %w", fetchErr)
+				return "", false, fmt.Errorf("fetching song after constraint violation: %w", fetchErr)
 			}
-			return song.ID, nil
+			return song.ID, false, nil
 		}
-		return "", fmt.Errorf("creating song: %w", err)
+		return "", false, fmt.Errorf("creating song: %w", err)
 	}
 
-	return song.ID, nil
+	return song.ID, true, nil
 }
 
 func (c *DBClient) DeleteSongByID(songID string) error {

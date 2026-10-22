@@ -23,7 +23,7 @@ flowchart LR
 
 - **Service layer** (`pkg/acousticdna/service.go`): `acousticService` implements `Service` (`interfaces.go`) with `AddSong`, `MatchSong`, `MatchHashes`, `GetSongByID`, `ListSongs`, `CountFingerprints`, `DeleteSong`, and `Close`. Build it with `NewService(opts ...Option)`. The options in `config.go` are `WithDBPath`, `WithTempDir`, `WithSampleRate`, `WithLogger`, and `WithStorage`. Defaults: `acousticdna.sqlite3`, `/tmp`, `11025`. Options are not validated.
 - **Storage**: `storage/sqlite.go` (`DBClient`, gorm models `Song`/`Fingerprint`) ↔ `storage_adapter.go` (`storageAdapter`, mapping to `models.Song`/`models.Couple`) ↔ the `Storage` interface.
-  - `Song` uses a UUID string PK and a unique `(Title, Artist)` pair. `RegisterSong` reuses an existing ID.
+  - `Song` uses a UUID string PK and a unique `(Title, Artist)` pair. `RegisterSong` reuses an existing ID and reports `created=false`; `AddSong` then skips fingerprint storage so re-adds never duplicate fingerprints.
   - `Fingerprint` has an indexed `Hash` and `SongID` and no cascade. `DeleteSongByID` deletes fingerprints and then the song inside one transaction.
   - `StoreFingerprints` batches inserts (1000-row flush, `CreateInBatches(…, 500)`). The whole song insert is not wrapped in one transaction.
   - `GetCouplesByHashes` runs **one** batched `hash IN (...)` query. Never add per-hash round trips.

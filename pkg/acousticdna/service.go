@@ -73,9 +73,14 @@ func (s *acousticService) AddSong(ctx context.Context, audioPath, title, artist,
 	peaks := fingerprint.ExtractPeaks(spec, sampleRate)
 	s.log.Infof("Extracted %d peaks", len(peaks))
 
-	songID, err := s.storage.RegisterSong(title, artist, youtubeID, int(duration*1000))
+	songID, created, err := s.storage.RegisterSong(title, artist, youtubeID, int(duration*1000))
 	if err != nil {
 		return "", fmt.Errorf("failed to register song: %w", err)
+	}
+	if !created {
+		// Re-adding must not store a second copy of the fingerprints: duplicates inflate match votes.
+		s.log.Infof("Song already exists (ID=%s); skipping fingerprint storage", songID)
+		return songID, nil
 	}
 
 	fps := fingerprint.Fingerprint(peaks, songID)
