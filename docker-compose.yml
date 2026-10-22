@@ -27,7 +27,9 @@ services:
       # cloud) with "not available on this app". android_vr authenticates AND
       # serves downloadable audio without cookies. Override if YouTube shifts:
       #   YTDLP_EXTRA_ARGS='--extractor-args youtube:player_client=<client>' docker compose up
-      YTDLP_EXTRA_ARGS: ${YTDLP_EXTRA_ARGS:---extractor-args youtube:player_client=android_vr}
+      # Set YTDLP_EXTRA_ARGS= (empty) to use yt-dlp's default client, e.g. on
+      # non-datacenter hosts where android_vr formats now need a PO token (403).
+      YTDLP_EXTRA_ARGS: ${YTDLP_EXTRA_ARGS---extractor-args youtube:player_client=android_vr}
     volumes:
       # Named volume: the SQLite fingerprint DB persists across restarts.
       - acousticdna-data:/data
